@@ -1,0 +1,840 @@
+:root {
+    --primary: #1E9E7A;
+    --primary-dark: #147A5E;
+    --primary-light: #E4F5EF;
+    --success: #00D97E;
+    --warning: #F6C343;
+    --danger: #E63757;
+    --dark: #12263F;
+    --light: #F4F8F7;
+    --border: #E4EAE8;
+    --text-muted: #6E84A3;
+    --card-bg: #FFFFFF;
+    --text-primary: #1A2B3C;
+    --shadow: 0 2px 10px rgba(18, 38, 63, 0.06);
+    --shadow-hover: 0 10px 26px rgba(30, 158, 122, 0.16);
+    --transition: all 0.2s ease;
+    --warning-tint-bg: #FDF3DC;
+    --warning-tint-text: #8a6300;
+    --danger-tint-bg: #FDEAEE;
+    --danger-tint-text: #b7233f;
+}
+
+/* Dark theme: same shapes/hovers, values flipped. --dark and --text-muted are
+   used as TEXT colors throughout (headings / secondary text) so overriding
+   them here is what makes text legible on a dark background everywhere at
+   once, without touching every rule that references them. */
+[data-theme="dark"] {
+    --primary: #2FBE95;
+    --primary-dark: #1E9E7A;
+    --primary-light: rgba(47, 190, 149, 0.16);
+    --dark: #E7EEF5;
+    --light: #0D1B2A;
+    --border: #23384A;
+    --text-muted: #8CA0B3;
+    --card-bg: #16283A;
+    --text-primary: #DCE6EF;
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    --shadow-hover: 0 10px 26px rgba(47, 190, 149, 0.22);
+    --warning-tint-bg: rgba(246, 195, 67, 0.16);
+    --warning-tint-text: #F6C343;
+    --danger-tint-bg: rgba(230, 55, 87, 0.16);
+    --danger-tint-text: #FF6B85;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--light);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text-primary);
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ---- Login page ---- */
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.theme-toggle-corner { position: absolute; top: 1.25rem; right: 1.25rem; }
+
+.login-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(18, 38, 63, 0.1);
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 380px;
+}
+
+.login-card h1 {
+    font-size: 1.4rem;
+    margin: 0 0 0.25rem;
+    color: var(--dark);
+}
+
+.login-card p {
+    margin: 0 0 1.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.form-group { margin-bottom: 1rem; }
+
+.form-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+    color: var(--dark);
+}
+
+/* select/textarea were missing here — a <select> has no default styling of
+   its own (unlike input, which at least inherits font/color reasonably),
+   so every dropdown in a .form-group (Doctors' Department/Duration/
+   Availability, Settings' Role, etc.) rendered as the browser's native
+   white-background/black-text control regardless of dark mode. Bare
+   <select> elements outside .form-group (filter bars, queue controls,
+   reception-screen) already have their own equivalent per-page inline
+   rule, so this fix is scoped to .form-group to match that existing split. */
+.form-group input, .form-group select, .form-group textarea {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+/* Password field with an eye-toggle icon inside it. */
+.password-wrapper { position: relative; }
+.password-wrapper input { padding-right: 2.5rem; }
+.password-toggle-btn {
+    position: absolute; top: 50%; right: 0.65rem; transform: translateY(-50%);
+    background: none; border: none; padding: 0.2rem; cursor: pointer;
+    color: var(--text-muted); display: flex; align-items: center;
+}
+.password-toggle-btn:hover { color: var(--dark); }
+
+.forgot-link {
+    display: block; text-align: center; margin-top: 0.9rem;
+    font-size: 0.85rem; color: var(--primary); text-decoration: none; cursor: pointer;
+    background: none; border: none; width: 100%;
+}
+.forgot-link:hover { text-decoration: underline; }
+
+.reset-step { display: none; }
+.reset-step.active { display: block; }
+.success-text { color: var(--success); font-size: 0.85rem; margin-top: 0.5rem; }
+
+.btn {
+    display: inline-block;
+    border: none;
+    border-radius: 6px;
+    padding: 0.6rem 1.1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.btn-primary { background: var(--primary); color: #fff; width: 100%; }
+.btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: var(--shadow-hover); }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--dark); }
+.btn-outline:hover { background: var(--light); border-color: var(--primary); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #c42b47; transform: translateY(-1px); }
+.btn:active { transform: translateY(0) scale(0.98); }
+
+.error-text {
+    color: var(--danger);
+    font-size: 0.85rem;
+    margin-top: 0.75rem;
+    min-height: 1.1em;
+}
+
+/* ---- App shell ---- */
+/* height (not min-height) + overflow: hidden keeps the shell pinned to the
+   viewport, so only .main-content's own overflow-y:auto scrolls. With
+   min-height, a tall page (many doctor cards, many bill rows) grew past the
+   viewport and the whole document scrolled instead — dragging the sidebar
+   and topbar along with it. */
+.app-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.shell-body { display: flex; flex: 1; min-height: 0; }
+
+/* Full-width bar: brand, global search, activity bell, user chip. */
+.global-topbar {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    height: 64px;
+    padding: 0 1.5rem;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    transition: var(--transition);
+    position: relative;
+}
+
+.brand { display: flex; align-items: center; gap: 0.55rem; width: 220px; flex-shrink: 0; }
+.brand-icon {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.brand-name { font-weight: 700; font-size: 1.02rem; color: var(--dark); white-space: nowrap; }
+
+.global-search { flex: 1; max-width: 480px; position: relative; }
+.global-search input {
+    width: 100%;
+    padding: 0.55rem 0.75rem 0.55rem 2.3rem;
+    border: 1px solid var(--border);
+    background: var(--light);
+    color: var(--text-primary);
+    border-radius: 8px;
+    font-size: 0.88rem;
+    transition: var(--transition);
+}
+.global-search input:hover { border-color: var(--primary); }
+.global-search input:focus { outline: none; border-color: var(--primary); background: var(--card-bg); box-shadow: 0 0 0 3px var(--primary-light); }
+.global-search .search-icon {
+    position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%);
+    color: var(--text-muted); pointer-events: none;
+}
+
+.topbar-spacer { flex: 1; }
+
+.topbar-actions { display: flex; align-items: center; gap: 0.75rem; }
+
+.icon-btn {
+    position: relative;
+    width: 38px; height: 38px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: var(--dark);
+    transition: var(--transition);
+}
+.icon-btn:hover { background: var(--light); border-color: var(--primary); transform: translateY(-1px); }
+.icon-btn .dot {
+    position: absolute; top: 6px; right: 6px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--danger); border: 1.5px solid var(--card-bg);
+}
+
+.user-chip {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.25rem; border-radius: 8px;
+}
+
+.avatar-circle {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 0.78rem;
+    flex-shrink: 0;
+}
+
+/* "Today" date chip + "Generate Report" button, both real (not decorative):
+   the date chip reflects the actual current date and reveals a native date
+   picker; Generate Report downloads a real CSV of today's stats. */
+.date-chip {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card-bg); color: var(--dark); font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; transition: var(--transition); white-space: nowrap; position: relative;
+}
+.date-chip:hover { border-color: var(--primary); }
+.date-chip input[type="date"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.btn-report {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.5rem 0.85rem; border: none; border-radius: 8px;
+    background: var(--primary); color: #fff; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; transition: var(--transition); white-space: nowrap;
+}
+.btn-report:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: var(--shadow-hover); }
+.btn-report:disabled { opacity: 0.6; cursor: wait; }
+
+/* Dropdown panels anchored under the topbar action icons. */
+.dropdown-panel {
+    display: none;
+    position: absolute;
+    top: 54px;
+    right: 0;
+    width: 340px;
+    max-height: 420px;
+    overflow-y: auto;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(18, 38, 63, 0.14);
+    z-index: 50;
+}
+.dropdown-panel.open { display: block; }
+.dropdown-panel .dropdown-header {
+    padding: 0.75rem 1rem; font-size: 0.8rem; font-weight: 700; color: var(--dark);
+    border-bottom: 1px solid var(--border);
+}
+.dropdown-panel .dropdown-item {
+    display: block; width: 100%; text-align: left; border: none; background: none;
+    padding: 0.65rem 1rem; font-size: 0.85rem; cursor: pointer; color: var(--text-primary);
+    border-bottom: 1px solid var(--border);
+    transition: var(--transition);
+}
+.dropdown-panel .dropdown-item:hover { background: var(--light); }
+.dropdown-panel .dropdown-item small { display: block; color: var(--text-muted); margin-top: 0.15rem; }
+.dropdown-panel .dropdown-empty { padding: 1rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+#globalSearchWrap, #activityWrap, #userMenuWrap { position: relative; }
+
+/* Icon-based sidebar with an active pill (light theme, per reference design). */
+.sidebar {
+    width: 220px;
+    background: var(--card-bg);
+    border-right: 1px solid var(--border);
+    padding: 1.25rem 0.9rem;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    transition: var(--transition);
+}
+
+.sidebar nav { flex: 1; }
+
+.nav-section { margin-bottom: 0.35rem; }
+.nav-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 0.5rem 0.75rem;
+    background: none; border: none; cursor: pointer;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-muted);
+    transition: var(--transition);
+}
+.nav-section-header:hover { color: var(--dark); }
+.nav-section-header .chevron { transition: transform 0.25s ease; flex-shrink: 0; }
+.nav-section-header[aria-expanded="false"] .chevron { transform: rotate(-90deg); }
+.nav-section-body { overflow: hidden; max-height: 300px; transition: max-height 0.3s ease; }
+.nav-section-body.collapsed { max-height: 0; }
+
+.sidebar nav a {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0.6rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 0.2rem;
+    transition: var(--transition);
+}
+.sidebar nav a svg { flex-shrink: 0; }
+.sidebar nav a.active { background: var(--primary-light); color: var(--primary-dark); }
+.sidebar nav a:hover:not(.active) { background: var(--light); color: var(--dark); transform: translateX(3px); }
+
+.sidebar-user {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.75rem; border-top: 1px solid var(--border); margin-top: 0.5rem;
+}
+.sidebar-user .name { font-size: 0.85rem; font-weight: 700; color: var(--dark); }
+.sidebar-user .email { font-size: 0.72rem; color: var(--text-muted); }
+
+.sidebar-logout-btn {
+    display: flex; align-items: center; gap: 0.65rem;
+    width: 100%; padding: 0.6rem 0.75rem; margin-top: 0.35rem;
+    background: none; border: none; border-radius: 8px;
+    color: var(--danger); font-size: 0.88rem; font-weight: 600;
+    cursor: pointer; transition: var(--transition);
+}
+.sidebar-logout-btn:hover { background: var(--danger-tint-bg); }
+.sidebar-logout-btn svg { flex-shrink: 0; }
+
+/* ---- Theme toggle (sidebar + login page) ---- */
+.theme-toggle {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.6rem 0.75rem; border-radius: 8px;
+    color: var(--text-muted); font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; transition: var(--transition); margin-bottom: 0.2rem;
+}
+.theme-toggle:hover { background: var(--light); color: var(--dark); }
+.theme-switch {
+    width: 36px; height: 20px; background: var(--border); border-radius: 20px;
+    position: relative; transition: var(--transition); margin-left: auto; flex-shrink: 0;
+}
+.theme-switch.on { background: var(--primary); }
+.theme-knob {
+    width: 14px; height: 14px; background: #fff; border-radius: 50%;
+    position: absolute; top: 3px; left: 3px; transition: var(--transition);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.theme-switch.on .theme-knob { transform: translateX(16px); }
+
+.main-content { flex: 1; padding: 1.75rem 2rem; overflow-y: auto; }
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+.topbar h1 { font-size: 1.3rem; margin: 0; color: var(--dark); }
+.topbar .sub { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.15rem; }
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: var(--card-bg);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    box-shadow: var(--shadow);
+    transition: var(--transition);
+}
+.stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
+.stat-card .label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem; }
+.stat-card .value { font-size: 1.6rem; font-weight: 700; color: var(--dark); }
+
+.card {
+    background: var(--card-bg);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 1.25rem;
+    transition: var(--transition);
+}
+.card.hoverable:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+.card h2 { font-size: 1rem; margin: 0 0 1rem; color: var(--dark); }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; color: var(--text-primary); }
+thead th {
+    text-align: left;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+}
+tbody td { padding: 0.6rem; border-bottom: 1px solid var(--border); transition: var(--transition); }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr { transition: var(--transition); }
+tbody tr:hover td { background: var(--light); }
+
+.badge {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    transition: var(--transition);
+}
+.badge:hover { transform: scale(1.06); }
+.badge-confirmed { background: var(--success); }
+.badge-pending, .badge-pending_payment { background: var(--warning); color: #4d3b06; }
+.badge-cancelled { background: var(--danger); }
+.badge-completed { background: var(--text-muted); }
+.badge-rescheduled { background: var(--primary); }
+
+.empty-state { color: var(--text-muted); font-size: 0.9rem; padding: 1rem 0; text-align: center; }
+
+/* Palette cycled by name-hash (js/avatar.js) for consistent colored initials
+   avatars — same doctor always gets the same color across pages/reloads. */
+.avatar-c0 { background: #1E9E7A; }
+.avatar-c1 { background: #2C7BE5; }
+.avatar-c2 { background: #E67E22; }
+.avatar-c3 { background: #8E44AD; }
+.avatar-c4 { background: #E63757; }
+.avatar-c5 { background: #16A2B8; }
+
+/* ---- Modals (used by the logout confirm + billing forms) ---- */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 20, 30, 0.5);
+    z-index: 999;
+    justify-content: center;
+    align-items: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+    background: var(--card-bg);
+    border-radius: 14px;
+    padding: 1.75rem;
+    width: 90%;
+    max-width: 460px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    animation: modalIn 0.2s ease;
+    color: var(--text-primary);
+}
+.modal-box.modal-wide { max-width: 620px; }
+@keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-box h3 { margin: 0 0 0.75rem; color: var(--dark); }
+.modal-box p { color: var(--text-muted); margin-bottom: 1.25rem; }
+.modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
+.modal-actions .btn { width: auto; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--light); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+/* ============================================================
+   RESPONSIVE
+   Breakpoint policy: a small set of deliberate control points (480 / 600 /
+   768 / 1024 / 1280) rather than a discrete rule per literal device width.
+   Everything between them is handled by fluid units already in use
+   throughout this file (%, minmax(), auto-fit/auto-fill, flex-wrap) plus the
+   additions below, so every width in the 320px-3440px range renders
+   correctly — not just the control points themselves. See the end-of-task
+   summary for the full breakpoint-to-behavior mapping.
+   ============================================================ */
+
+html, body { overflow-x: hidden; }
+
+/* ---- Sidebar: permanent on desktop (>1024px); an off-canvas drawer opened
+   by the hamburger button on tablet AND mobile (<=1024px) — see topbar.js
+   for the open/close/outside-click/Escape logic. A single breakpoint covers
+   both "tablet: collapsible" and "mobile: hidden + hamburger" from the spec,
+   since both amount to the same off-canvas-drawer interaction; only true
+   desktop keeps the sidebar permanently docked in-flow. ---- */
+.hamburger-btn {
+    display: none;
+    width: 38px; height: 38px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--card-bg);
+    align-items: center; justify-content: center; cursor: pointer;
+    color: var(--dark); flex-shrink: 0; transition: var(--transition);
+}
+.hamburger-btn:hover { background: var(--light); border-color: var(--primary); }
+
+.sidebar-overlay {
+    display: none;
+    position: fixed; inset: 0; background: rgba(10, 20, 30, 0.45);
+    z-index: 149; opacity: 0; transition: opacity 0.25s ease;
+}
+.sidebar-overlay.show { display: block; opacity: 1; }
+
+@media (max-width: 1024px) {
+    .hamburger-btn { display: flex; }
+    .brand { width: auto; }
+
+    .sidebar {
+        position: fixed; top: 0; left: 0; bottom: 0; z-index: 150;
+        width: 260px; max-width: 82vw;
+        transform: translateX(-100%);
+        transition: transform 0.28s ease;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.18);
+    }
+    .sidebar.open { transform: translateX(0); }
+}
+
+/* ---- Global topbar: reflows instead of clipping on narrow screens — the
+   search box drops to its own full-width row, the spacer collapses (nothing
+   left to push apart once the layout wraps), and everything shrinks a size
+   further under 600px. ---- */
+@media (max-width: 1024px) {
+    .global-topbar { height: auto; min-height: 64px; padding: 0.6rem 1rem; flex-wrap: wrap; row-gap: 0.6rem; }
+    .global-search { order: 3; flex-basis: 100%; max-width: none; }
+    .topbar-spacer { display: none; }
+}
+@media (max-width: 600px) {
+    .global-topbar { padding: 0.6rem 0.75rem; gap: 0.6rem; }
+    .brand-name { font-size: 0.92rem; }
+    .date-chip { padding: 0.5rem 0.6rem; font-size: 0.8rem; }
+    .btn-report { padding: 0.5rem 0.65rem; }
+}
+
+/* ---- Stat-card grids: explicit column counts so a wide desktop shows a
+   clean 4-per-row instead of auto-fit spreading into 8+ tiny columns, while
+   staying auto-fit (organically responsive) between the named breakpoints. ---- */
+@media (min-width: 1280px) {
+    .stat-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 1024px) {
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+    .stat-grid { grid-template-columns: 1fr; }
+}
+
+/* ---- Tables -> cards on mobile/small-tablet. Rather than maintaining a
+   second mobile-only markup, every render function attaches a data-label
+   attribute (matching its column header) to each <td> — see appointments.js/
+   patients.js/billing.js/queue-management.js/dashboard.js. Below the
+   breakpoint the table becomes a plain vertical flow, each <tr> becomes a
+   bordered card, and each <td> lays out as a "label: value" row via
+   ::before, driven entirely by that data-label. Desktop/tablet-landscape
+   keep the standard table (horizontal scroll allowed inside .card via its
+   own overflow, not the page). ---- */
+.card { overflow-x: auto; }
+@media (max-width: 768px) {
+    .card table { display: block; }
+    .card table thead { display: none; }
+    .card table tbody { display: block; }
+    .card table tbody tr {
+        display: block; margin-bottom: 0.9rem; padding: 0.75rem 0.9rem;
+        border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg);
+    }
+    .card table tbody tr:last-child { margin-bottom: 0; }
+    .card table tbody tr:hover td { background: none; }
+    .card table tbody td {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 0.75rem; text-align: right; padding: 0.4rem 0; border-bottom: 1px dashed var(--border);
+    }
+    .card table tbody td:last-child { border-bottom: none; }
+    .card table tbody td[data-label]::before {
+        content: attr(data-label);
+        font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+        color: var(--text-muted); text-align: left; flex-shrink: 0;
+    }
+    .card table tbody td:not([data-label]) { justify-content: flex-start; }
+}
+
+/* ---- Modals: near-fullscreen and independently scrollable on mobile, so a
+   tall form (e.g. the bill detail modal) never overflows the viewport. ---- */
+@media (max-width: 600px) {
+    .modal-box, .modal-box.modal-wide {
+        width: 94vw; max-width: 94vw; max-height: 88vh; overflow-y: auto;
+        padding: 1.25rem;
+    }
+    .modal-actions { flex-wrap: wrap; }
+    .modal-actions .btn { flex: 1 1 auto; min-width: 120px; }
+}
+
+/* ---- Buttons: real touch targets on small screens; form/settings action
+   rows stack to full-width buttons instead of squeezing side by side. ---- */
+@media (max-width: 600px) {
+    .btn, .btn-report, .date-chip, .icon-btn, .hamburger-btn {
+        min-height: 44px;
+    }
+    .form-actions, .settings-actions { flex-direction: column; align-items: stretch; }
+    .form-actions .btn, .settings-actions .btn { width: 100%; }
+}
+
+/* ---- Dropdown panels (search results / activity bell): capped so they can
+   never spill past either edge of a narrow viewport. ---- */
+@media (max-width: 600px) {
+    .dropdown-panel { width: min(340px, calc(100vw - 2rem)); right: -0.5rem; }
+}
+
+/* ---- Generic form rows: 2/3-column layouts collapse to a single column,
+   every input goes full width, labels stay visible (already block-level). ---- */
+@media (max-width: 700px) {
+    .form-row { flex-direction: column; }
+    .form-row .form-group { width: 100%; }
+}
+
+/* ---- Main content padding tightens on small screens instead of eating a
+   big fixed margin out of an already-narrow viewport. ---- */
+@media (max-width: 768px) {
+    .main-content { padding: 1.1rem 1rem; }
+    .topbar { flex-wrap: wrap; gap: 0.5rem; }
+}
+
+/* ---- Login page: the card and its modal need the same small-screen
+   headroom as the authenticated pages' modals. ---- */
+@media (max-width: 480px) {
+    .login-card { padding: 1.5rem 1.25rem; max-width: 100%; }
+}
+
+/* ============================================================
+   MOBILE DASHBOARD UI/UX ENHANCEMENT (320px-480px)
+   A second, more deliberate pass over the same components the general
+   responsive pass above already made "not broken" — this pass makes them
+   feel native rather than merely correct: a real 3-row header instead of
+   organic wrapping, a real typographic scale, real touch-target sizing, and
+   touch-appropriate (no hover-lift) interaction. Desktop and tablet
+   (>480px) are untouched — every rule here is scoped to max-width:480px.
+   ============================================================ */
+
+/* ---- Prevent the page scrolling behind the open mobile drawer. The
+   overlay dims .main-content but its own overflow-y:auto would otherwise
+   keep scrolling under a finger while the drawer sits on top of it — see
+   topbar.js's openSidebar/closeSidebar, which toggle this class. ---- */
+body.sidebar-drawer-open { overflow: hidden; }
+body.sidebar-drawer-open .main-content { overflow: hidden; }
+
+@media (max-width: 480px) {
+    /* ---- Header: a strict 3-row layout instead of organic wrapping.
+       .topbar-actions holds both the theme toggle and the notification
+       bell in the DOM (row 1 needs the bell, row 3 needs the toggle) —
+       `display: contents` makes the wrapper transparent to flex layout so
+       its own children can take `order` values directly against their
+       topbar-level siblings, regardless of DOM nesting. Row breaks are
+       forced by giving the row's first item `flex-basis: 100%` (a full-
+       width flex item always starts a new line, and flex-wrap carries
+       everything after it onto the row below). ---- */
+    .global-topbar { row-gap: 0.65rem; column-gap: 0.5rem; padding: 0.65rem 0.85rem; }
+    .topbar-actions { display: contents; }
+
+    .hamburger-btn { order: 1; }
+    .brand { order: 2; flex: 1; min-width: 0; }
+    .brand-name { overflow: hidden; text-overflow: ellipsis; }
+    #activityWrap { order: 3; }
+
+    .global-search { order: 4; flex-basis: 100%; }
+
+    .date-chip { order: 5; flex: 1; justify-content: center; }
+    .btn-report { order: 6; flex: 1; justify-content: center; }
+    #themeToggleBtn { order: 7; }
+
+    /* ---- Typography scale ---- */
+    .topbar h1 { font-size: 1.5rem; } /* 24px */
+    .btn, .btn-report, .date-chip, .action-btn { font-size: 1rem; } /* 16px */
+
+    /* ---- Buttons: real 44px targets with breathing room between them ---- */
+    .btn, .btn-report, .date-chip, .icon-btn, .hamburger-btn, .action-btn {
+        min-height: 44px;
+    }
+    .form-actions .btn + .btn, .modal-actions .btn + .btn { margin-top: 0.5rem; }
+
+    /* ---- Search bar: full width, rounded, real height and padding ---- */
+    .global-search input {
+        min-height: 44px; border-radius: 24px; padding: 0.6rem 1rem 0.6rem 2.6rem; font-size: 1rem;
+    }
+    .global-search .search-icon { left: 1rem; }
+}
+
+/* ---- Touch devices: hover-only affordances (lift + shadow) don't apply —
+   worse, the transition still fires on tap-and-hold, reading as a stray
+   flash of animation with no purpose. Gated on `hover:none` (not a width
+   breakpoint) since it's genuinely about input capability, not screen size —
+   a touch tablet in the 481-1024px range gets the same treatment. ---- */
+@media (hover: none) and (pointer: coarse) {
+    .stat-card:hover, .overview-card:hover, .queue-stat-card:hover,
+    .doctor-card:hover, .icon-btn:hover, .btn-report:hover,
+    .card.hoverable:hover, .badge:hover, .sidebar nav a:hover:not(.active) {
+        transform: none;
+    }
+}
+
+/* ============================================================
+   HOSPITAL SELF-REGISTRATION (register.html) + shared auth-page
+   components (toast, spinner, password strength, checkbox).
+   ============================================================ */
+
+/* Wider sibling of .login-card for the two-section registration form —
+   same card language (radius/shadow/padding), just not capped at 380px. */
+.auth-card-wide {
+    background: var(--card-bg);
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(18, 38, 63, 0.1);
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 720px;
+    animation: authCardIn 0.35s ease;
+}
+@keyframes authCardIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.auth-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin: 1.75rem 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+.auth-section-title:first-of-type { margin-top: 0; }
+
+/* form-row already exists (2-col, collapses to 1 col at 700px via the
+   media query above) — .form-row-3 is the same idea for the City/State/
+   Country/Pincode row, wrapping to 2 then 1 column on smaller screens. */
+.form-row-3 { display: flex; gap: 1rem; }
+.form-row-3 .form-group { flex: 1; min-width: 0; }
+@media (max-width: 700px) { .form-row-3 { flex-wrap: wrap; } .form-row-3 .form-group { flex: 1 1 45%; } }
+@media (max-width: 480px) { .form-row-3 .form-group { flex: 1 1 100%; } }
+
+/* ---- Password strength meter ---- */
+.strength-meter { display: flex; gap: 4px; margin-top: 0.4rem; }
+.strength-bar { height: 4px; flex: 1; border-radius: 2px; background: var(--border); transition: background-color 0.2s ease; }
+.strength-label { font-size: 0.78rem; margin-top: 0.3rem; color: var(--text-muted); min-height: 1.1em; }
+.strength-0 .strength-bar:nth-child(1) { background: var(--danger); }
+.strength-1 .strength-bar:nth-child(-n+1) { background: var(--danger); }
+.strength-2 .strength-bar:nth-child(-n+2) { background: var(--warning); }
+.strength-3 .strength-bar:nth-child(-n+3) { background: #6BC96B; }
+.strength-4 .strength-bar:nth-child(-n+4) { background: var(--success); }
+
+/* ---- Checkbox row (Terms & Conditions) ---- */
+.checkbox-row { display: flex; align-items: flex-start; gap: 0.6rem; margin: 1.25rem 0; }
+.checkbox-row input[type="checkbox"] { width: 18px; height: 18px; margin-top: 0.1rem; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; }
+.checkbox-row label { font-size: 0.85rem; color: var(--text-primary); cursor: pointer; }
+.checkbox-row a { color: var(--primary); }
+
+/* ---- Logo upload dropzone ---- */
+.logo-upload { display: flex; align-items: center; gap: 1rem; }
+.logo-preview {
+    width: 64px; height: 64px; border-radius: 10px; border: 1.5px dashed var(--border);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    background: var(--light); flex-shrink: 0; font-size: 1.5rem; color: var(--text-muted);
+}
+.logo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.logo-upload-btn { position: relative; overflow: hidden; }
+.logo-upload-btn input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.logo-upload-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+/* ---- Loading spinner (submit buttons) ---- */
+@keyframes btnSpin { to { transform: rotate(360deg); } }
+.btn-spinner {
+    display: inline-block; width: 15px; height: 15px; margin-right: 0.5rem;
+    border: 2px solid rgba(255, 255, 255, 0.4); border-top-color: #fff;
+    border-radius: 50%; animation: btnSpin 0.7s linear infinite; vertical-align: -2px;
+}
+.btn[disabled] { opacity: 0.75; cursor: not-allowed; transform: none !important; }
+
+/* ---- Auth page cross-links (Back to Login / Create Hospital Account) ---- */
+.auth-switch-link {
+    display: block; text-align: center; margin-top: 1.1rem;
+    font-size: 0.85rem; color: var(--text-muted);
+}
+.auth-switch-link a { color: var(--primary); text-decoration: none; font-weight: 600; }
+.auth-switch-link a:hover { text-decoration: underline; }
+
+/* ---- Toast notifications ---- */
+.toast-container {
+    position: fixed; top: 1.25rem; right: 1.25rem; z-index: 2000;
+    display: flex; flex-direction: column; gap: 0.6rem; max-width: min(360px, calc(100vw - 2rem));
+}
+.toast {
+    display: flex; align-items: flex-start; gap: 0.6rem;
+    background: var(--card-bg); color: var(--text-primary);
+    border: 1px solid var(--border); border-left: 4px solid var(--primary);
+    border-radius: 8px; padding: 0.75rem 1rem; box-shadow: 0 8px 24px rgba(18, 38, 63, 0.15);
+    font-size: 0.88rem; opacity: 0; transform: translateX(20px); transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.toast.toast-show { opacity: 1; transform: translateX(0); }
+.toast-error { border-left-color: var(--danger); }
+.toast-success { border-left-color: var(--success); }
+.toast-icon { flex-shrink: 0; }
+.toast-msg { flex: 1; word-break: break-word; }
+
+@media (max-width: 480px) {
+    .auth-card-wide { padding: 1.5rem 1.25rem; max-width: 100%; }
+    .toast-container { left: 1rem; right: 1rem; max-width: none; }
+}

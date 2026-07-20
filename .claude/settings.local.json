@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"http://localhost:3000/webhook?hub.mode=subscribe&hub.verify_token=test_token&hub.challenge=abc123\")",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code} in %{time_total}s\\\\n' -X POST http://localhost:3000/webhook -H 'Content-Type: application/json' -d '{ *)",
+      "Read(//tmp/**)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, Path, StartTime })",
+      "PowerShell(Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" } | Select-Object Id, StartTime, @{n='CmdLine';e={\\(Get-CimInstance Win32_Process -Filter \"ProcessId=$\\($_.Id\\)\"\\).CommandLine}})",
+      "PowerShell(Stop-Process -Id 16736 -Force)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(try { $c = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction Stop; Write-Output \"STILL LISTENING: $\\($c.OwningProcess\\)\" } catch { Write-Output \"PORT 3000 IS FREE\" })"
+    ]
+  }
+}

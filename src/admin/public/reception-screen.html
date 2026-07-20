@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>(function(){try{document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'light');}catch(e){}})();</script>
+<title>Reception Display — Hospital Chatbot Admin</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="css/style.css">
+<style>
+    body { background: var(--light); }
+    .rs-setup {
+        max-width: 480px; margin: 4rem auto; padding: 2rem; background: var(--card-bg);
+        border-radius: 12px; box-shadow: var(--shadow);
+    }
+    .rs-setup h1 { margin: 0 0 1.25rem; font-size: 1.2rem; }
+    .rs-setup select, .rs-setup button {
+        width: 100%; padding: 0.65rem; margin-bottom: 0.85rem; border-radius: 8px;
+        border: 1px solid var(--border); font-size: 0.95rem; background: var(--card-bg); color: var(--text-primary);
+    }
+
+    /* Fullscreen on desktop/tablet (matches the spec's "Desktop: fullscreen,
+       Tablet: fullscreen" rows); on mobile the same layout just centers with
+       everything scaled down via clamp() rather than a separate mobile
+       template — a token/queue kiosk is the same content at every size, only
+       the scale changes. clamp() means every width between the named
+       breakpoints scales smoothly, not just 320/375/768 themselves. */
+    .rs-screen { display: none; min-height: 100vh; flex-direction: column; align-items: center; justify-content: center; padding: 2rem 1rem; text-align: center; box-sizing: border-box; }
+    .rs-screen.active { display: flex; }
+    .rs-hospital { display: flex; align-items: center; gap: 0.75rem; margin-bottom: clamp(1.25rem, 5vw, 2.5rem); flex-wrap: wrap; justify-content: center; }
+    .rs-hospital .icon { font-size: clamp(1.8rem, 5vw, 2.5rem); }
+    .rs-hospital .name { font-size: clamp(1.15rem, 4vw, 1.6rem); font-weight: 800; color: var(--dark); }
+    .rs-doctor { font-size: clamp(1.1rem, 4vw, 1.4rem); font-weight: 700; color: var(--text-primary); margin-bottom: 0.35rem; }
+    .rs-dept { font-size: clamp(0.9rem, 3vw, 1.05rem); color: var(--text-muted); margin-bottom: clamp(1.25rem, 5vw, 2.5rem); }
+    .rs-now-serving-label { font-size: clamp(1rem, 3.5vw, 1.3rem); color: var(--text-muted); font-weight: 600; margin-bottom: 0.5rem; letter-spacing: 0.05em; text-transform: uppercase; }
+    .rs-now-serving-value { font-size: clamp(4.5rem, 22vw, 9rem); font-weight: 900; color: var(--danger); line-height: 1; margin-bottom: clamp(1.5rem, 6vw, 3rem); }
+    .rs-secondary-row { display: flex; gap: clamp(1.25rem, 6vw, 3rem); flex-wrap: wrap; justify-content: center; }
+    .rs-secondary-card .label { font-size: clamp(0.85rem, 3vw, 1.1rem); color: var(--text-muted); margin-bottom: 0.35rem; }
+    .rs-secondary-card .value { font-size: clamp(1.8rem, 8vw, 3rem); font-weight: 800; color: var(--primary-dark); }
+    .rs-exit-btn {
+        position: fixed; top: 1rem; right: 1rem; background: var(--card-bg); border: 1px solid var(--border);
+        border-radius: 8px; padding: 0.5rem 0.9rem; cursor: pointer; font-size: 0.85rem; color: var(--text-muted);
+        min-height: 44px;
+    }
+    @media (max-width: 480px) {
+        .rs-setup { margin: 2rem auto; padding: 1.5rem; max-width: 92vw; }
+        .rs-setup select, .rs-setup button { min-height: 44px; }
+    }
+</style>
+</head>
+<body>
+    <div class="rs-setup" id="rsSetup">
+        <h1>🖥️ Reception Display Setup</h1>
+        <select id="rsDoctorSelect"><option value="">Select doctor…</option></select>
+        <select id="rsShiftSelect">
+            <option value="Morning">Morning</option>
+            <option value="Afternoon">Afternoon</option>
+            <option value="Evening">Evening</option>
+        </select>
+        <button class="btn btn-primary" id="rsStartBtn" type="button">Start Reception Display</button>
+    </div>
+
+    <button class="rs-exit-btn" id="rsExitBtn" type="button" style="display:none;">✕ Exit Display</button>
+    <div class="rs-screen" id="rsScreen">
+        <div class="rs-hospital">
+            <span class="icon" id="rsHospitalIcon">🏥</span>
+            <span class="name" id="rsHospitalName">—</span>
+        </div>
+        <div class="rs-doctor" id="rsDoctorName">—</div>
+        <div class="rs-dept" id="rsDeptName">—</div>
+
+        <div class="rs-now-serving-label">Now Serving</div>
+        <div class="rs-now-serving-value" id="rsCurrentToken">—</div>
+
+        <div class="rs-secondary-row">
+            <div class="rs-secondary-card">
+                <div class="label">Next Token</div>
+                <div class="value" id="rsNextToken">—</div>
+            </div>
+            <div class="rs-secondary-card">
+                <div class="label">Patients Waiting</div>
+                <div class="value" id="rsWaiting">—</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/reception-screen.js"></script>
+</body>
+</html>
