@@ -73,6 +73,18 @@ function emptyState(container, message) {
     container.innerHTML = `<div class="chart-empty">${message || 'No data yet.'}</div>`;
 }
 
+// One shared tooltip element for every chart on the page (same pattern as
+// Toast's shared container) rather than one per chart instance.
+function ensureChartTooltip() {
+    let tip = document.querySelector('.chart-tooltip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.className = 'chart-tooltip';
+        document.body.appendChild(tip);
+    }
+    return tip;
+}
+
 // How many x-axis labels actually fit without colliding: past ~10 items on
 // a wide desktop chart, or far fewer once the same chart is squeezed to a
 // 320px-wide mobile screen (a fixed count-based thinning left 24 hourly
@@ -122,10 +134,22 @@ function renderBarChart(container, data, opts) {
 }
 
 function renderLineChart(container, data, opts) {
-    const { xKey, yKey, color, height = defaultChartHeight(), formatValue = (v) => v, formatLabel = (v) => String(v) } = opts;
+    const {
+        xKey, yKey, color, height = defaultChartHeight(),
+        formatValue = (v) => v, formatLabel = (v) => String(v),
+        // Richer per-point wording for the hover tooltip only — the axis
+        // stays terse (formatLabel) since axis labels have to survive tight
+        // spacing; the tooltip has room to spell the date out.
+        formatTooltipLabel,
+        // Optional: makes each point clickable/Enter-able for drill-down
+        // (e.g. the dashboard's per-day chart jumps into Appointments
+        // filtered to that date). Called with (dataPoint, index).
+        onPointClick
+    } = opts;
     container.innerHTML = '';
     if (!data || data.length === 0) return emptyState(container);
 
+    const tooltipLabel = formatTooltipLabel || formatLabel;
     const layout = axisLayout(container, height);
     const { padding, plotW, plotH, width } = layout;
     const values = data.map(d => Number(d[yKey]) || 0);
@@ -146,13 +170,22 @@ function renderLineChart(container, data, opts) {
     const linePath = `M${points.map(p => p.join(',')).join(' L')}`;
     svg.appendChild(svgEl('path', { d: linePath, fill: 'none', stroke: lineColor, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
 
+    // Crosshair — hidden until hover/focus, snaps to the nearest point's x
+    // (per the dataviz skill: "the crosshair finds the X... readers aim at
+    // a date, never at a 2px line").
+    const crosshair = svgEl('line', {
+        x1: 0, x2: 0, y1: padding.top, y2: padding.top + plotH,
+        stroke: chartGrid(), 'stroke-width': 1, 'stroke-dasharray': '3,3'
+    });
+    crosshair.style.opacity = 0;
+    svg.appendChild(crosshair);
+
     const labelEvery = labelStep(data.length, plotW, 40);
+    const dots = [];
     points.forEach(([x, y], i) => {
-        const dot = svgEl('circle', { cx: x, cy: y, r: 4, fill: lineColor, stroke: chartSurface(), 'stroke-width': 2 });
-        const title = svgEl('title', {});
-        title.textContent = `${formatLabel(data[i][xKey])}: ${formatValue(values[i])}`;
-        dot.appendChild(title);
+        const dot = svgEl('circle', { cx: x, cy: y, r: 4, fill: lineColor, stroke: chartSurface(), 'stroke-width': 2, class: 'chart-dot' });
         svg.appendChild(dot);
+        dots.push(dot);
 
         if (i % labelEvery === 0 || i === data.length - 1) {
             const lbl = svgEl('text', { x, y: padding.top + plotH + 14, 'text-anchor': 'middle', 'font-size': 9, fill: chartInk() });
@@ -162,6 +195,92 @@ function renderLineChart(container, data, opts) {
     });
 
     container.appendChild(svg);
+
+    // ---- Hover/focus layer ----
+    // A single transparent hit-rect spanning the whole plot area (bigger
+    // than any one 8px dot — see interaction.md's "hit target bigger than
+    // the mark") finds the nearest point by x and drives the crosshair,
+    // tooltip and a "lift" on that point's dot together. Arrow keys give
+    // keyboard users the same per-point detail as pointer hover.
+    const tip = ensureChartTooltip();
+    const hit = svgEl('rect', {
+        x: padding.left, y: padding.top, width: Math.max(plotW, 1), height: Math.max(plotH, 1),
+        fill: 'transparent', class: onPointClick ? 'chart-hit chart-hit-clickable' : 'chart-hit',
+        tabindex: '0', role: onPointClick ? 'button' : 'img',
+        'aria-label': onPointClick ? 'Chart data, use arrow keys to explore and Enter to open a day' : 'Chart data, use arrow keys to explore'
+    });
+    svg.appendChild(hit);
+
+    let activeIndex = -1;
+    function renderTooltipContent(i) {
+        tip.innerHTML = '';
+        const val = document.createElement('div');
+        val.className = 'chart-tooltip-value';
+        val.textContent = formatValue(values[i]);
+        const lbl = document.createElement('div');
+        lbl.className = 'chart-tooltip-label';
+        lbl.textContent = tooltipLabel(data[i][xKey]);
+        tip.appendChild(val);
+        tip.appendChild(lbl);
+        if (onPointClick) {
+            const hint = document.createElement('div');
+            hint.className = 'chart-tooltip-hint';
+            hint.textContent = 'Click for details →';
+            tip.appendChild(hint);
+        }
+    }
+    function positionTooltip(clientX, clientY) {
+        tip.style.left = clientX + 14 + 'px';
+        tip.style.top = clientY + 14 + 'px';
+    }
+    function setActive(i, clientX, clientY) {
+        if (i !== activeIndex) {
+            if (activeIndex >= 0) dots[activeIndex].setAttribute('r', 4);
+            activeIndex = i;
+            dots[i].setAttribute('r', 6);
+            crosshair.setAttribute('x1', points[i][0]);
+            crosshair.setAttribute('x2', points[i][0]);
+            crosshair.style.opacity = 1;
+            renderTooltipContent(i);
+            tip.classList.add('show');
+        }
+        positionTooltip(clientX, clientY);
+    }
+    function clearActive() {
+        if (activeIndex >= 0) dots[activeIndex].setAttribute('r', 4);
+        activeIndex = -1;
+        crosshair.style.opacity = 0;
+        tip.classList.remove('show');
+    }
+    function indexFromEvent(e) {
+        const rect = hit.getBoundingClientRect();
+        const ratio = data.length === 1 ? 0 : (e.clientX - rect.left) / rect.width;
+        return Math.min(data.length - 1, Math.max(0, Math.round(ratio * (data.length - 1))));
+    }
+    function screenPosForIndex(i) {
+        const rect = hit.getBoundingClientRect();
+        const ratio = data.length === 1 ? 0.5 : i / (data.length - 1);
+        return [rect.left + ratio * rect.width, rect.top + rect.height / 2];
+    }
+
+    hit.addEventListener('pointermove', (e) => setActive(indexFromEvent(e), e.clientX, e.clientY));
+    hit.addEventListener('pointerleave', clearActive);
+    hit.addEventListener('blur', clearActive);
+    hit.addEventListener('click', (e) => {
+        if (!onPointClick) return;
+        const i = indexFromEvent(e);
+        onPointClick(data[i], i);
+    });
+    hit.addEventListener('keydown', (e) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key)) return;
+        e.preventDefault();
+        if (e.key === 'Enter' || e.key === ' ') {
+            if (onPointClick && activeIndex >= 0) onPointClick(data[activeIndex], activeIndex);
+            return;
+        }
+        const next = activeIndex < 0 ? 0 : Math.min(data.length - 1, Math.max(0, activeIndex + (e.key === 'ArrowRight' ? 1 : -1)));
+        setActive(next, ...screenPosForIndex(next));
+    });
 }
 
 window.ChartKit = { renderBarChart, renderLineChart, palette: chartPalette };

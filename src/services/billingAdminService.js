@@ -2,6 +2,10 @@ const db = require('../config/db');
 const whatsappService = require('./whatsappService');
 const { bi, cleanDoctorName, formatDate, formatDateDisplay } = require('../rule_engine/messages');
 
+// Safety cap (Stage 3.5 perf review), same reasoning as
+// appointmentAdminService's MAX_RESULTS — this query had no LIMIT at all.
+const MAX_RESULTS = 1000;
+
 async function getStats(hospitalId) {
     const [[todayRow]] = await db.query(
         `SELECT COALESCE(SUM(b.total_amount), 0) AS collection, COUNT(*) AS total
@@ -51,8 +55,9 @@ async function listBills(hospitalId, { date, status, search } = {}) {
          JOIN patients p ON p.id = b.patient_id
          JOIN doctors doc ON doc.id = b.doctor_id
          WHERE ${where}
-         ORDER BY b.created_at DESC`,
-        params
+         ORDER BY b.created_at DESC
+         LIMIT ?`,
+        [...params, MAX_RESULTS]
     );
     return rows.map(r => ({ ...r, bill_date: formatDate(r.bill_date), doctor_name: cleanDoctorName(r.doctor_name) }));
 }

@@ -10,6 +10,7 @@ const helmet = require('helmet');
 const path = require('path');
 const webhookRoutes = require('./routes/webhookRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const platformRoutes = require('./routes/platformRoutes');
 
 const app = express();
 
@@ -31,6 +32,10 @@ app.use(express.json({
 
 app.use('/', webhookRoutes);
 app.use('/api/admin', adminRoutes);
+// Mounted separately from /api/admin (Stage 4A) — a distinct route
+// namespace, not a sub-path, so a platform token and a hospital token are
+// never even routed through the same middleware chain.
+app.use('/api/platform', platformRoutes);
 app.use('/admin', express.static(path.join(__dirname, 'admin/public')));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

@@ -8,10 +8,15 @@ const SHIFT_LABELS = { morning: 'Morning', afternoon: 'Afternoon', evening: 'Eve
 // Same-every-working-day Booking Capacity model (admin-controlled, per the
 // feature spec) — no per-weekday customization, just which days the doctor
 // works plus one shared shift template.
+// max values here must satisfy max * duration <= window at the DEFAULT
+// duration (resetCapacityForm sets fDuration to 15) — otherwise clicking "Add
+// Doctor" and saving without touching the Booking Capacity numbers at all
+// fails validation with a confusing error, since Morning is enabled by
+// default. 240min window / 15min = 16, 180/15 = 12, 120/15 = 8.
 const SHIFT_DEFAULTS = {
-    morning: { start: '09:00', end: '13:00', max: 25 },
-    afternoon: { start: '14:00', end: '17:00', max: 20 },
-    evening: { start: '18:00', end: '20:00', max: 15 }
+    morning: { start: '09:00', end: '13:00', max: 16 },
+    afternoon: { start: '14:00', end: '17:00', max: 12 },
+    evening: { start: '18:00', end: '20:00', max: 8 }
 };
 
 let editingId = null; // null = add mode, otherwise the doctor id being edited
@@ -124,6 +129,7 @@ async function loadDepartments() {
         opt.textContent = d.name;
         select.appendChild(opt);
     });
+    CustomSelect.mount(select);
 }
 
 function showForm(mode, doctor) {
@@ -136,12 +142,17 @@ function showForm(mode, doctor) {
         document.getElementById('fName').value = doctor.name;
         document.getElementById('fDepartment').value = doctor.department_id;
         document.getElementById('fFee').value = doctor.consultation_fee;
+        document.getElementById('fQualification').value = doctor.qualification || '';
+        document.getElementById('fExperience').value = doctor.experience_years != null ? doctor.experience_years : '';
         scheduleToCapacityForm(doctor.schedule_json);
         document.getElementById('fAvailability').value = doctor.is_on_leave ? 'unavailable' : 'available';
     } else {
         document.getElementById('doctorForm').reset();
         resetCapacityForm();
     }
+    // Setting .value directly (above) doesn't fire 'change', so the custom
+    // Department dropdown's trigger label needs an explicit refresh.
+    CustomSelect.sync(document.getElementById('fDepartment'));
 
     document.getElementById('formPanel').style.display = 'block';
     document.getElementById('formPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -193,6 +204,8 @@ document.getElementById('doctorForm').addEventListener('submit', async (e) => {
         name: document.getElementById('fName').value.trim(),
         department_id: Number(document.getElementById('fDepartment').value),
         consultation_fee: Number(document.getElementById('fFee').value),
+        qualification: document.getElementById('fQualification').value.trim() || null,
+        experience_years: document.getElementById('fExperience').value === '' ? 0 : Number(document.getElementById('fExperience').value),
         schedule_json: schedule,
         is_on_leave: document.getElementById('fAvailability').value === 'unavailable'
     };
@@ -238,12 +251,21 @@ function renderCards(doctors) {
             ? '<span class="status-pill leave"><span class="status-dot"></span>On Leave</span>'
             : '<span class="status-pill available"><span class="status-dot"></span>Available</span>';
 
+        // Qualification/experience are optional — older doctors predating
+        // these fields may have neither set, so this line is only rendered
+        // when there's real data to show (no fabricated placeholder text).
+        const qualParts = [];
+        if (d.qualification) qualParts.push(escapeHtml(d.qualification));
+        if (d.experience_years) qualParts.push(`${d.experience_years} yrs exp`);
+        const qualHtml = qualParts.length ? `<div class="doctor-card-qual">${qualParts.join(' • ')}</div>` : '';
+
         card.innerHTML = `
             <div class="doctor-card-top">
                 ${Avatar.html(d.name)}
                 <div>
                     <div class="doctor-card-name">Dr. ${escapeHtml(d.name)}</div>
                     <div class="doctor-card-dept">${escapeHtml(d.department_name)}</div>
+                    ${qualHtml}
                     ${statusHtml}
                 </div>
             </div>
@@ -300,13 +322,17 @@ document.getElementById('doctorGrid').addEventListener('click', async (e) => {
     }
 
     if (action === 'delete') {
-        if (!window.confirm('Delete this doctor? This cannot be undone.')) return;
+        const ok = await Confirm.show('Delete this doctor? This cannot be undone.', {
+            title: 'Delete Doctor', confirmText: 'Delete', danger: true
+        });
+        if (!ok) return;
         const res = await AdminAuth.authFetch(`/api/admin/doctors/${id}`, { method: 'DELETE' });
         const data = await res.json();
         if (!res.ok) {
-            alert(data.error || 'Could not delete doctor');
+            Toast.show(data.error || 'Could not delete doctor', 'error');
             return;
         }
+        Toast.show('Doctor deleted.', 'success');
         loadDoctors(document.getElementById('doctorSearch').value.trim());
     }
 });

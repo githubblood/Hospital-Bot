@@ -117,6 +117,62 @@ body {
     border-color: var(--primary);
 }
 
+/* Shift cards — originally Doctors' Booking Capacity editor only, now shared
+   with Settings' Operating Hours panel (same visual language for "a shift
+   with a time window"). Settings' cards have no checkbox toggle (all three
+   shifts are always active there), so the toggle/blur rules below simply
+   have nothing to match and do nothing on that page — no separate variant
+   needed. */
+.shift-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.shift-card { border: 1px solid var(--border); border-radius: 10px; padding: 1rem; background: var(--light); transition: var(--transition); }
+.shift-card:has(.shift-toggle input:checked) { border-color: var(--primary); }
+.shift-card-header { margin-bottom: 0.85rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--border); }
+.shift-toggle { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; color: var(--dark); font-size: 0.9rem; cursor: pointer; }
+.shift-toggle input { width: 16px; height: 16px; }
+.shift-card-body { transition: filter 0.2s ease, opacity 0.2s ease; }
+.shift-card-body .form-group { margin-bottom: 0.65rem; }
+.shift-card-body .form-group:last-child { margin-bottom: 0; }
+.shift-card-body label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
+.shift-card-body input {
+    width: 100%; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 5px;
+    font-size: 0.85rem; background: var(--card-bg); color: var(--text-primary);
+}
+/* Shift not enabled: its fields read as inactive rather than looking
+   editable-but-ignored — blurred, dimmed, and inert until the toggle is
+   checked again. :has() reacts live to the checkbox, so no JS is needed.
+   Gated on the card actually containing a .shift-toggle at all — Settings'
+   Operating Hours cards have no toggle (all three shifts are always active
+   there), and ":not(:has(...))" alone would otherwise match vacuously and
+   blur every one of those fields permanently. */
+.shift-card:has(.shift-toggle):not(:has(.shift-toggle input:checked)) .shift-card-body {
+    filter: blur(2.5px);
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Custom dropdown (see js/custom-select.js) — a native <select>'s open
+   option list is an OS-level popup that ignores z-index and floats above
+   everything else on the page. This renders its own scrollable panel in
+   normal document flow instead, so it opens neatly under the field. */
+.custom-select { position: relative; }
+.custom-select-native { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.custom-select-trigger {
+    width: 100%; text-align: left; padding: 0.55rem 2.1rem 0.55rem 0.75rem;
+    border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem;
+    background: var(--card-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2352514e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 0.7rem center;
+    color: var(--text-primary); cursor: pointer; transition: var(--transition);
+}
+.custom-select-trigger:hover, .custom-select-trigger.open { border-color: var(--primary); }
+.custom-select-panel {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    max-height: 260px; overflow-y: auto; background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: var(--shadow-hover); z-index: 60; padding: 0.3rem;
+}
+.custom-select-panel.open { display: block; }
+.custom-select-option { padding: 0.5rem 0.65rem; border-radius: 6px; font-size: 0.88rem; color: var(--text-primary); cursor: pointer; }
+.custom-select-option:hover { background: var(--light); }
+.custom-select-option.selected { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; }
+
 /* Password field with an eye-toggle icon inside it. */
 .password-wrapper { position: relative; }
 .password-wrapper input { padding-right: 2.5rem; }
@@ -304,17 +360,112 @@ body {
 
 /* Icon-based sidebar with an active pill (light theme, per reference design). */
 .sidebar {
-    width: 220px;
+    width: 260px;
     background: var(--card-bg);
     border-right: 1px solid var(--border);
     padding: 1.25rem 0.9rem;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    transition: var(--transition);
+    /* .app-shell/.shell-body already constrain the sidebar to exactly the
+       viewport height minus the topbar via flex-stretch (more robust than a
+       hardcoded 100vh, which would double-count the topbar and overflow) —
+       this box just needs to never grow past that and let its own children
+       manage their own scroll/no-scroll regions. */
+    overflow: hidden;
+    transition: width 0.28s ease, var(--transition);
 }
 
-.sidebar nav { flex: 1; }
+/* Header (collapse toggle) and footer (user/logout) never scroll or shrink;
+   only the nav list between them does — the three-region "fixed / scroll /
+   fixed" sidebar layout the collapse feature depends on. */
+.sidebar-header { display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; padding-bottom: 0.75rem; }
+.sidebar-collapse-btn {
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card-bg); color: var(--text-muted); cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; transition: var(--transition);
+}
+.sidebar-collapse-btn:hover { background: var(--light); color: var(--dark); border-color: var(--primary); }
+.sidebar-collapse-btn svg { transition: transform 0.28s ease; flex-shrink: 0; }
+
+.sidebar nav { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.sidebar-user, .sidebar-logout-btn { flex-shrink: 0; }
+
+/* ---- Collapsed state (desktop only — see the max-width:1024px override
+   below, where the sidebar is already an off-canvas overlay and a width
+   collapse doesn't apply). Single source of truth is html.sidebar-collapsed,
+   set by the pre-paint inline script in <head> (avoiding a flash of the
+   expanded sidebar on load) and toggled by the same class from
+   topbar.js's click handler — not a class on .sidebar itself, so there's
+   only one mechanism to keep in sync, not two. ---- */
+html.sidebar-collapsed .sidebar { width: 70px; }
+html.sidebar-collapsed .sidebar-header { justify-content: center; }
+html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
+/* Icon-only mode shows every module in one flat column — grouping headers
+   and their accordion open/closed state have nothing to usefully do at 70px
+   wide. The state itself is untouched in localStorage (still applied the
+   moment the sidebar re-expands); this only overrides what's *visible*. */
+html.sidebar-collapsed .nav-section-header { display: none; }
+html.sidebar-collapsed .nav-section-body { max-height: none !important; overflow: visible; }
+html.sidebar-collapsed .nav-label,
+html.sidebar-collapsed .sidebar-user .user-info { display: none; }
+html.sidebar-collapsed .sidebar nav a { justify-content: center; padding: 0.6rem; gap: 0; }
+html.sidebar-collapsed .sidebar-user { justify-content: center; }
+html.sidebar-collapsed .sidebar-logout-btn { justify-content: center; padding: 0.6rem; gap: 0; }
+
+/* Tooltips on collapsed icons (data-tooltip is derived from each link's own
+   .nav-label text by topbar.js, so there's one source of truth for the
+   label instead of a second hand-authored copy). :focus-visible triggers
+   the same tooltip as :hover, satisfying the keyboard-accessibility
+   requirement for free rather than as a separate mechanism. */
+html.sidebar-collapsed .sidebar nav a,
+html.sidebar-collapsed .sidebar-logout-btn { position: relative; }
+html.sidebar-collapsed .sidebar nav a::after,
+html.sidebar-collapsed .sidebar-logout-btn::after {
+    content: attr(data-tooltip);
+    position: absolute; left: 100%; top: 50%; transform: translateY(-50%) translateX(6px);
+    background: var(--dark); color: #fff; padding: 0.35rem 0.65rem; border-radius: 6px;
+    font-size: 0.78rem; font-weight: 600; white-space: nowrap;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease; z-index: 200; box-shadow: var(--shadow-hover);
+}
+html.sidebar-collapsed .sidebar nav a:hover::after,
+html.sidebar-collapsed .sidebar nav a:focus-visible::after,
+html.sidebar-collapsed .sidebar-logout-btn:hover::after,
+html.sidebar-collapsed .sidebar-logout-btn:focus-visible::after {
+    opacity: 1; visibility: visible; transform: translateY(-50%) translateX(10px);
+}
+
+/* Keyboard focus states — the sidebar's hover styles (background/translateX)
+   don't fire on keyboard focus by default, so tab-navigating gave no visible
+   feedback at all before this. */
+.sidebar nav a:focus-visible,
+.sidebar-collapse-btn:focus-visible,
+.nav-section-header:focus-visible,
+.sidebar-logout-btn:focus-visible {
+    outline: 2px solid var(--primary); outline-offset: 2px;
+}
+
+/* The collapse toggle is a desktop-only affordance — under 1024px the
+   sidebar is already the existing off-canvas overlay (position:fixed,
+   translateX slide-in via .open, dimmed .sidebar-overlay backdrop), a
+   completely different interaction that a width collapse doesn't apply to.
+   Guards against a stale sidebarCollapsed=true from a desktop session
+   accidentally shrinking the mobile drawer to 70px too. */
+@media (max-width: 1024px) {
+    .sidebar-header { display: none; }
+    html.sidebar-collapsed .sidebar { width: 260px; }
+    html.sidebar-collapsed .nav-section-header { display: flex; }
+    html.sidebar-collapsed .nav-section-body { max-height: 300px; overflow: hidden; }
+    html.sidebar-collapsed .nav-section-body.collapsed { max-height: 0; }
+    html.sidebar-collapsed .nav-label,
+    html.sidebar-collapsed .sidebar-user .user-info { display: block; }
+    html.sidebar-collapsed .sidebar nav a { justify-content: flex-start; padding: 0.6rem 0.75rem; gap: 0.65rem; }
+    html.sidebar-collapsed .sidebar-user { justify-content: flex-start; }
+    html.sidebar-collapsed .sidebar-logout-btn { justify-content: flex-start; padding: 0.6rem 0.75rem; gap: 0.65rem; }
+    html.sidebar-collapsed .sidebar nav a::after,
+    html.sidebar-collapsed .sidebar-logout-btn::after { display: none; }
+}
 
 .nav-section { margin-bottom: 0.35rem; }
 .nav-section-header {
@@ -453,6 +604,7 @@ tbody tr:hover td { background: var(--light); }
 .badge-cancelled { background: var(--danger); }
 .badge-completed { background: var(--text-muted); }
 .badge-rescheduled { background: var(--primary); }
+.badge-waitlisted { background: #8E44AD; }
 
 .empty-state { color: var(--text-muted); font-size: 0.9rem; padding: 1rem 0; text-align: center; }
 
@@ -495,6 +647,14 @@ tbody tr:hover td { background: var(--light); }
 .modal-box p { color: var(--text-muted); margin-bottom: 1.25rem; }
 .modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
 .modal-actions .btn { width: auto; }
+
+/* ---- Confirm.prompt() text field — see js/confirm.js ---- */
+.confirm-prompt-input {
+    width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 0.9rem; background: var(--card-bg); color: var(--text-primary);
+    margin-bottom: 1.25rem; font-family: inherit; resize: vertical;
+}
+.confirm-prompt-input:focus { outline: none; border-color: var(--primary); }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--light); }
@@ -838,3 +998,27 @@ body.sidebar-drawer-open .main-content { overflow: hidden; }
     .auth-card-wide { padding: 1.5rem 1.25rem; max-width: 100%; }
     .toast-container { left: 1rem; right: 1rem; max-width: none; }
 }
+
+/* ---- Chart hover layer: crosshair + tooltip (see js/charts.js) ---- */
+.chart-tooltip {
+    position: fixed;
+    pointer-events: none;
+    z-index: 3000;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.7rem;
+    box-shadow: 0 8px 24px rgba(18, 38, 63, 0.18);
+    font-size: 0.78rem;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    white-space: nowrap;
+}
+.chart-tooltip.show { opacity: 1; transform: translateY(0); }
+.chart-tooltip-value { font-weight: 700; color: var(--dark); font-size: 0.95rem; }
+.chart-tooltip-label { color: var(--text-muted); margin-top: 0.1rem; }
+.chart-tooltip-hint { color: var(--primary); margin-top: 0.3rem; font-size: 0.72rem; font-weight: 600; }
+.chart-dot { transition: r 0.12s ease; }
+.chart-hit { outline: none; }
+.chart-hit-clickable { cursor: pointer; }

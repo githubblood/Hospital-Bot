@@ -24,10 +24,13 @@ function reminderCell(appt) {
     return `<span class="badge badge-confirmed">Sent</span>${sentAt ? `<br><small>${sentAt}</small>` : ''}`;
 }
 
+let doctorsCache = [];
+
 async function loadDoctorFilter() {
     try {
         const res = await AdminAuth.authFetch('/api/admin/doctors');
         const data = await res.json();
+        doctorsCache = data.doctors;
         const select = document.getElementById('filterDoctor');
         data.doctors.forEach(d => {
             const opt = document.createElement('option');
@@ -40,6 +43,8 @@ async function loadDoctorFilter() {
     }
 }
 
+const NON_TERMINAL_STATUSES = ['Pending', 'Confirmed', 'Pending_Payment', 'Waitlisted'];
+
 function actionButtons(appt) {
     const buttons = [];
     if (appt.status === 'Pending') {
@@ -47,6 +52,9 @@ function actionButtons(appt) {
         buttons.push(`<button class="action-btn action-reject" data-action="reject" data-id="${appt.id}">Reject</button>`);
     } else if (appt.status !== 'Cancelled' && appt.status !== 'Completed' && appt.status !== 'Rescheduled') {
         buttons.push(`<button class="action-btn action-cancel" data-action="cancel" data-id="${appt.id}">Cancel</button>`);
+    }
+    if (NON_TERMINAL_STATUSES.includes(appt.status)) {
+        buttons.push(`<button class="action-btn action-reschedule" data-action="reschedule" data-id="${appt.id}" data-doctor-id="${appt.doctor_id}">Reschedule</button>`);
     }
     // Delete is separate from Cancel — Cancel is the patient-facing outcome
     // (notifies them, keeps the record); Delete permanently removes the row,
@@ -105,9 +113,12 @@ async function loadAppointments() {
 async function handleAction(action, id) {
     let reason = null;
     if (action === 'reject' || action === 'cancel') {
-        reason = window.prompt(`Reason for ${action === 'reject' ? 'rejecting' : 'cancelling'} this appointment (optional):`) || null;
-    } else if (!window.confirm('Approve this appointment?')) {
-        return;
+        reason = await Confirm.prompt(`Reason for ${action === 'reject' ? 'rejecting' : 'cancelling'} this appointment (optional):`, {
+            title: action === 'reject' ? 'Reject Appointment' : 'Cancel Appointment', confirmText: 'Continue'
+        });
+    } else {
+        const ok = await Confirm.show('Approve this appointment?', { title: 'Approve Appointment', confirmText: 'Approve' });
+        if (!ok) return;
     }
 
     try {
@@ -118,9 +129,10 @@ async function handleAction(action, id) {
         });
         const data = await res.json();
         if (!res.ok) {
-            alert(data.error || 'Action failed');
+            Toast.show(data.error || 'Action failed', 'error');
             return;
         }
+        Toast.show('Appointment updated.', 'success');
         loadAppointments();
     } catch (err) {
         console.error('Action failed:', err);
@@ -128,15 +140,19 @@ async function handleAction(action, id) {
 }
 
 async function handleDelete(id) {
-    if (!window.confirm('Permanently delete this appointment record? This cannot be undone.')) return;
+    const ok = await Confirm.show('Permanently delete this appointment record? This cannot be undone.', {
+        title: 'Delete Appointment', confirmText: 'Delete', danger: true
+    });
+    if (!ok) return;
 
     try {
         const res = await AdminAuth.authFetch(`/api/admin/appointments/${id}`, { method: 'DELETE' });
         const data = await res.json();
         if (!res.ok) {
-            alert(data.error || 'Could not delete appointment');
+            Toast.show(data.error || 'Could not delete appointment', 'error');
             return;
         }
+        Toast.show('Appointment deleted.', 'success');
         loadAppointments();
     } catch (err) {
         console.error('Delete failed:', err);
@@ -147,20 +163,108 @@ document.getElementById('tableBody').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
     if (btn.dataset.action === 'delete') { handleDelete(btn.dataset.id); return; }
+    if (btn.dataset.action === 'reschedule') { openRescheduleModal(btn.dataset.id, btn.dataset.doctorId); return; }
     handleAction(btn.dataset.action, btn.dataset.id);
 });
 
+// ---- Manual reschedule (receptionist-triggered) ----
+const rescheduleModal = document.getElementById('rescheduleModal');
+let rescheduleAppointmentId = null;
+
+function closeRescheduleModal() {
+    rescheduleModal.classList.remove('show');
+    document.getElementById('rescheduleError').textContent = '';
+    rescheduleAppointmentId = null;
+}
+
+async function loadRescheduleShifts() {
+    const doctorId = document.getElementById('rsDoctor').value;
+    const date = document.getElementById('rsDate').value;
+    const shiftSelect = document.getElementById('rsShift');
+    if (!doctorId || !date) {
+        shiftSelect.innerHTML = '<option value="">Pick a doctor and date first…</option>';
+        return;
+    }
+    shiftSelect.innerHTML = '<option value="">Loading…</option>';
+    try {
+        const res = await AdminAuth.authFetch(`/api/admin/doctors/${doctorId}/availability?date=${date}`);
+        const data = await res.json();
+        const open = (data.shifts || []).filter(s => s.remaining > 0);
+        if (open.length === 0) {
+            shiftSelect.innerHTML = '<option value="">No open shifts on this date</option>';
+            return;
+        }
+        shiftSelect.innerHTML = open.map(s => `<option value="${s.shift}">${s.shift} (${s.remaining} left)</option>`).join('');
+    } catch (err) {
+        shiftSelect.innerHTML = '<option value="">Could not load shifts</option>';
+    }
+}
+
+function openRescheduleModal(appointmentId, doctorId) {
+    rescheduleAppointmentId = appointmentId;
+    const doctorSelect = document.getElementById('rsDoctor');
+    doctorSelect.innerHTML = doctorsCache.map(d =>
+        `<option value="${d.id}">Dr. ${escapeHtml(d.name)}${d.is_on_leave ? ' (on leave)' : ''}</option>`
+    ).join('');
+    if (doctorId) doctorSelect.value = doctorId;
+
+    const dateInput = document.getElementById('rsDate');
+    const today = new Date();
+    dateInput.min = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    dateInput.value = '';
+    document.getElementById('rsShift').innerHTML = '<option value="">Pick a date first…</option>';
+    document.getElementById('rescheduleError').textContent = '';
+
+    rescheduleModal.classList.add('show');
+}
+
+document.getElementById('rsDoctor').addEventListener('change', loadRescheduleShifts);
+document.getElementById('rsDate').addEventListener('change', loadRescheduleShifts);
+document.getElementById('rescheduleCancelBtn').addEventListener('click', closeRescheduleModal);
+rescheduleModal.addEventListener('click', (e) => { if (e.target === rescheduleModal) closeRescheduleModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && rescheduleModal.classList.contains('show')) closeRescheduleModal(); });
+
+document.getElementById('rescheduleConfirmBtn').addEventListener('click', async () => {
+    const doctorId = document.getElementById('rsDoctor').value;
+    const date = document.getElementById('rsDate').value;
+    const shift = document.getElementById('rsShift').value;
+    const errorEl = document.getElementById('rescheduleError');
+    if (!doctorId || !date || !shift) {
+        errorEl.textContent = 'Doctor, date, and shift are all required.';
+        return;
+    }
+    try {
+        const res = await AdminAuth.authFetch(`/api/admin/appointments/${rescheduleAppointmentId}/reschedule`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ doctorId: Number(doctorId), date, shift })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            errorEl.textContent = data.error || 'Could not reschedule';
+            return;
+        }
+        closeRescheduleModal();
+        Toast.show('Appointment rescheduled.', 'success');
+        loadAppointments();
+    } catch (err) {
+        errorEl.textContent = 'Could not reach the server.';
+    }
+});
+
 document.getElementById('clearCancelledBtn').addEventListener('click', async () => {
-    if (!window.confirm('Permanently delete ALL cancelled appointments? This cannot be undone.')) return;
+    const ok = await Confirm.show('Permanently delete ALL cancelled appointments? This cannot be undone.', {
+        title: 'Clear Cancelled Appointments', confirmText: 'Delete All', danger: true
+    });
+    if (!ok) return;
 
     try {
         const res = await AdminAuth.authFetch('/api/admin/appointments/cancelled', { method: 'DELETE' });
         const data = await res.json();
         if (!res.ok) {
-            alert(data.error || 'Could not clear cancelled appointments');
+            Toast.show(data.error || 'Could not clear cancelled appointments', 'error');
             return;
         }
-        alert(`Deleted ${data.deletedCount} cancelled appointment(s).`);
+        Toast.show(`Deleted ${data.deletedCount} cancelled appointment(s).`, 'success');
         loadAppointments();
     } catch (err) {
         console.error('Clear cancelled failed:', err);
@@ -176,6 +280,14 @@ document.getElementById('clearFilters').addEventListener('click', () => {
     document.getElementById('filterDoctor').value = '';
     loadAppointments();
 });
+
+// Deep-link from the dashboard's per-day charts (?date=YYYY-MM-DD, optional
+// &status=) — clicking a day there jumps here pre-filtered to it.
+const urlParams = new URLSearchParams(window.location.search);
+const urlDate = urlParams.get('date') || '';
+const urlStatus = urlParams.get('status') || '';
+if (urlDate) document.getElementById('filterDate').value = urlDate;
+if (urlStatus) document.getElementById('filterStatus').value = urlStatus;
 
 loadDoctorFilter();
 loadAppointments();

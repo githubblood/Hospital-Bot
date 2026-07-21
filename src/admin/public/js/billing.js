@@ -78,7 +78,7 @@ document.getElementById('clearFilters').addEventListener('click', () => {
 async function viewBill(billId) {
     selectedBillId = billId;
     const res = await AdminAuth.authFetch(`/api/admin/billing/${billId}`);
-    if (!res.ok) { alert('Could not load bill'); return; }
+    if (!res.ok) { Toast.show('Could not load bill', 'error'); return; }
     const b = await res.json();
 
     document.getElementById('billDetailContent').innerHTML = `
@@ -128,7 +128,7 @@ document.getElementById('sendWhatsAppBtn').addEventListener('click', async () =>
     if (!selectedBillId) return;
     const res = await AdminAuth.authFetch(`/api/admin/billing/${selectedBillId}/whatsapp`, { method: 'POST' });
     const data = await res.json();
-    alert(res.ok ? '📱 Bill sent on WhatsApp!' : ('❌ ' + (data.error || 'Failed to send')));
+    Toast.show(res.ok ? 'Bill sent on WhatsApp!' : (data.error || 'Failed to send'), res.ok ? 'success' : 'error');
 });
 
 document.getElementById('printBillBtn').addEventListener('click', () => window.print());

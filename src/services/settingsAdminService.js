@@ -8,9 +8,12 @@ const db = require('../config/db');
 // (hospitalRegistrationService.js, direct column write); wiring a re-upload
 // through this generic replace-all endpoint would need its own multipart
 // route (like registration has), not a place in this plain-JSON field list.
+// Operating hours (morning/afternoon/evening) moved out of this list — they
+// now have their own tab/endpoint (operatingHoursService.js), since saving
+// them needs the affected-appointments preview/warning flow, not a blind
+// blanket rewrite.
 const PROFILE_FIELDS = ['name', 'icon', 'address', 'city', 'state', 'country', 'pincode',
-    'phone', 'email', 'website', 'emergency_contact',
-    'morning_start', 'morning_end', 'evening_start', 'evening_end'];
+    'phone', 'email', 'website', 'emergency_contact'];
 
 // hospitals.* config flags read throughout the rule engine (hospital.multi_branch,
 // etc.) — no caching layer sits in front of getHospitalConfig, so a save here
@@ -52,7 +55,9 @@ async function getAccount(adminId) {
 // Password change is optional — omit newPassword to just rename the admin.
 // Renaming without a password check is safe: nothing sensitive is exposed by
 // the name field itself, and the request already carries a valid JWT.
-async function updateAccount(adminId, { name, role, currentPassword, newPassword }) {
+// role is intentionally not writable here — see the comment in
+// settingsController.js's updateAccount.
+async function updateAccount(adminId, { name, currentPassword, newPassword }) {
     if (newPassword) {
         const [rows] = await db.query('SELECT password_hash FROM admin_users WHERE id = ?', [adminId]);
         const admin = rows[0];
@@ -60,9 +65,9 @@ async function updateAccount(adminId, { name, role, currentPassword, newPassword
             return { error: 'WRONG_PASSWORD' };
         }
         const hash = await bcrypt.hash(newPassword, 10);
-        await db.query('UPDATE admin_users SET name = ?, role = ?, password_hash = ? WHERE id = ?', [name, role, hash, adminId]);
+        await db.query('UPDATE admin_users SET name = ?, password_hash = ? WHERE id = ?', [name, hash, adminId]);
     } else {
-        await db.query('UPDATE admin_users SET name = ?, role = ? WHERE id = ?', [name, role, adminId]);
+        await db.query('UPDATE admin_users SET name = ? WHERE id = ?', [name, adminId]);
     }
     return { success: true };
 }

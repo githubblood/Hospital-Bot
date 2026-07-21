@@ -41,7 +41,7 @@ function startDisplay() {
     const select = document.getElementById('rsDoctorSelect');
     const doctorId = select.value;
     const shift = document.getElementById('rsShiftSelect').value;
-    if (!doctorId) { alert('Select a doctor first.'); return; }
+    if (!doctorId) { Toast.show('Select a doctor first.', 'error'); return; }
 
     const opt = select.selectedOptions[0];
     document.getElementById('rsDoctorName').textContent = `Dr. ${cleanDoctorNameClient(opt.dataset.name)}`;

@@ -31,10 +31,6 @@ async function loadHospital() {
     document.getElementById('hEmail').value = h.email || '';
     document.getElementById('hWebsite').value = h.website || '';
     document.getElementById('hEmergencyContact').value = h.emergency_contact || '';
-    document.getElementById('hMorningStart').value = (h.morning_start || '09:00:00').slice(0, 5);
-    document.getElementById('hMorningEnd').value = (h.morning_end || '13:00:00').slice(0, 5);
-    document.getElementById('hEveningStart').value = (h.evening_start || '17:00:00').slice(0, 5);
-    document.getElementById('hEveningEnd').value = (h.evening_end || '20:00:00').slice(0, 5);
 }
 
 document.getElementById('saveHospitalBtn').addEventListener('click', async () => {
@@ -49,11 +45,7 @@ document.getElementById('saveHospitalBtn').addEventListener('click', async () =>
         phone: document.getElementById('hPhone').value.trim(),
         email: document.getElementById('hEmail').value.trim(),
         website: document.getElementById('hWebsite').value.trim(),
-        emergency_contact: document.getElementById('hEmergencyContact').value.trim(),
-        morning_start: document.getElementById('hMorningStart').value,
-        morning_end: document.getElementById('hMorningEnd').value,
-        evening_start: document.getElementById('hEveningStart').value,
-        evening_end: document.getElementById('hEveningEnd').value
+        emergency_contact: document.getElementById('hEmergencyContact').value.trim()
     };
     try {
         const res = await AdminAuth.authFetch('/api/admin/settings/hospital', {
@@ -139,7 +131,6 @@ async function loadAccount() {
 
 document.getElementById('saveAccountBtn').addEventListener('click', async () => {
     const name = document.getElementById('aName').value.trim();
-    const role = document.getElementById('aRole').value;
     const currentPassword = document.getElementById('aCurrentPassword').value;
     const newPassword = document.getElementById('aNewPassword').value;
     if (!name) { showFeedback('account', 'Name is required.', true); return; }
@@ -147,7 +138,7 @@ document.getElementById('saveAccountBtn').addEventListener('click', async () => 
     try {
         const res = await AdminAuth.authFetch('/api/admin/settings/account', {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, role, current_password: currentPassword, new_password: newPassword || undefined })
+            body: JSON.stringify({ name, current_password: currentPassword, new_password: newPassword || undefined })
         });
         const data = await res.json();
         if (!res.ok) { showFeedback('account', data.error || 'Could not save', true); return; }
@@ -156,10 +147,11 @@ document.getElementById('saveAccountBtn').addEventListener('click', async () => 
         document.getElementById('aCurrentPassword').value = '';
         document.getElementById('aNewPassword').value = '';
 
-        // Keep the JWT's cached name/role in sync so the sidebar reflects the
-        // change immediately, not just after the next login.
+        // Keep the JWT's cached name in sync so the sidebar reflects the
+        // change immediately, not just after the next login. role isn't
+        // editable here (see staff.html), so it's left untouched.
         const admin = AdminAuth.getAdmin();
-        if (admin) { admin.name = name; admin.role = role; AdminAuth.setSession(AdminAuth.getToken(), admin); }
+        if (admin) { admin.name = name; AdminAuth.setSession(AdminAuth.getToken(), admin); }
         renderSidebarUser();
     } catch (err) { showFeedback('account', 'Could not reach the server.', true); }
 });
@@ -208,7 +200,331 @@ document.getElementById('testWhatsAppBtn').addEventListener('click', async () =>
     }
 });
 
+// ---- Operating Hours ----
+const HOUR_FIELD_IDS = {
+    morning_start: 'ohMorningStart', morning_end: 'ohMorningEnd',
+    afternoon_start: 'ohAfternoonStart', afternoon_end: 'ohAfternoonEnd',
+    evening_start: 'ohEveningStart', evening_end: 'ohEveningEnd'
+};
+const HOUR_DEFAULTS = {
+    morning_start: '09:00:00', morning_end: '13:00:00',
+    afternoon_start: '13:00:00', afternoon_end: '17:00:00',
+    evening_start: '17:00:00', evening_end: '20:00:00'
+};
+
+async function loadOperatingHours() {
+    const res = await AdminAuth.authFetch('/api/admin/settings/operating-hours');
+    const h = await res.json();
+    Object.entries(HOUR_FIELD_IDS).forEach(([field, id]) => {
+        document.getElementById(id).value = (h[field] || HOUR_DEFAULTS[field]).slice(0, 5);
+    });
+}
+
+function readHoursForm() {
+    const body = {};
+    Object.entries(HOUR_FIELD_IDS).forEach(([field, id]) => {
+        body[field] = document.getElementById(id).value;
+    });
+    return body;
+}
+
+// Hand-built 4-button modal (Keep / Reschedule / Cancel / Abort) — distinct
+// from Confirm.show, which is strictly binary. Resolves the clicked action,
+// or 'abort' on Escape/backdrop-click, matching Confirm's safe-cancel default.
+function showAffectedAppointmentsDialog(preview) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay show';
+
+        const box = document.createElement('div');
+        box.className = 'modal-box modal-wide';
+
+        const h3 = document.createElement('h3');
+        h3.textContent = '⚠️ Appointments Affected';
+
+        const p = document.createElement('p');
+        p.textContent = `${preview.totalCount} upcoming appointment${preview.totalCount === 1 ? '' : 's'} fall outside the new operating hours.`;
+
+        const listWrap = document.createElement('div');
+        listWrap.style.maxHeight = '220px';
+        listWrap.style.overflowY = 'auto';
+        listWrap.style.marginBottom = '1rem';
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>Patient</th><th>Doctor</th><th>Date</th><th>Shift</th><th>Time</th></tr>';
+        const tbody = document.createElement('tbody');
+        ['Morning', 'Afternoon', 'Evening'].forEach(shift => {
+            (preview.byShift[shift] || []).forEach(a => {
+                const tr = document.createElement('tr');
+                [a.patient_name, 'Dr. ' + a.doctor_name, a.appointment_date, a.shift, a.expected_time].forEach(text => {
+                    const td = document.createElement('td');
+                    td.textContent = text;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        });
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        listWrap.appendChild(table);
+
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const buttons = [
+            { action: 'abort', label: 'Cancel Changes', cls: 'btn-outline' },
+            { action: 'keep', label: 'Keep Existing Appointments', cls: 'btn-outline' },
+            { action: 'reschedule', label: 'Reschedule Affected Appointments', cls: 'btn-primary' },
+            { action: 'cancel', label: 'Cancel Affected Appointments', cls: 'btn-danger' }
+        ];
+        buttons.forEach(({ action, label, cls }) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn ' + cls;
+            btn.textContent = label;
+            btn.addEventListener('click', () => cleanup(action));
+            actions.appendChild(btn);
+        });
+
+        box.appendChild(h3);
+        box.appendChild(p);
+        box.appendChild(listWrap);
+        box.appendChild(actions);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        function cleanup(action) {
+            document.removeEventListener('keydown', onKey);
+            overlay.remove();
+            resolve(action);
+        }
+        function onKey(e) { if (e.key === 'Escape') cleanup('abort'); }
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup('abort'); });
+        document.addEventListener('keydown', onKey);
+    });
+}
+
+document.getElementById('saveHoursBtn').addEventListener('click', async () => {
+    const hours = readHoursForm();
+    try {
+        const previewRes = await AdminAuth.authFetch('/api/admin/settings/operating-hours/preview', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(hours)
+        });
+        const preview = await previewRes.json();
+        if (!previewRes.ok) { showFeedback('hours', preview.error || 'Could not check affected appointments', true); return; }
+
+        const action = preview.totalCount === 0 ? 'keep' : await showAffectedAppointmentsDialog(preview);
+        if (!action || action === 'abort') return;
+
+        const res = await AdminAuth.authFetch('/api/admin/settings/operating-hours', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...hours, action })
+        });
+        const data = await res.json();
+        if (!res.ok) { showFeedback('hours', data.error || 'Could not save', true); return; }
+
+        const affectedNote = data.affectedCount > 0 ? ` (${data.affectedCount} appointment(s): ${action}).` : '.';
+        showFeedback('hours', 'Operating hours saved' + affectedNote, false);
+        Toast.show('Operating hours saved.', 'success');
+    } catch (err) { showFeedback('hours', 'Could not reach the server.', true); }
+});
+
+// ---- Emergency Override ----
+const OVERRIDE_REASONS = ['Doctor Emergency', 'Hospital Emergency', 'Public Holiday', 'Maintenance', 'Power Failure', 'Other'];
+
+function openOverrideForm(scope) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay show';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = scope === 'Hospital' ? '🚨 Close Entire Hospital' : `🚨 Close ${scope} Shift`;
+
+    const reasonGroup = document.createElement('div');
+    reasonGroup.className = 'form-group';
+    const reasonLabel = document.createElement('label');
+    reasonLabel.textContent = 'Reason';
+    const reasonSelect = document.createElement('select');
+    OVERRIDE_REASONS.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r; opt.textContent = r;
+        reasonSelect.appendChild(opt);
+    });
+    reasonGroup.appendChild(reasonLabel);
+    reasonGroup.appendChild(reasonSelect);
+
+    const noteGroup = document.createElement('div');
+    noteGroup.className = 'form-group';
+    const noteLabel = document.createElement('label');
+    noteLabel.textContent = 'Note (optional)';
+    const noteInput = document.createElement('textarea');
+    noteInput.rows = 2;
+    noteGroup.appendChild(noteLabel);
+    noteGroup.appendChild(noteInput);
+
+    const errorEl = document.createElement('div');
+    errorEl.className = 'error-text';
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button'; cancelBtn.className = 'btn btn-outline'; cancelBtn.textContent = 'Cancel';
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button'; confirmBtn.className = 'btn btn-danger'; confirmBtn.textContent = 'Close ' + (scope === 'Hospital' ? 'Hospital' : scope);
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+
+    box.appendChild(h3);
+    box.appendChild(reasonGroup);
+    box.appendChild(noteGroup);
+    box.appendChild(errorEl);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function close() { overlay.remove(); }
+    cancelBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    confirmBtn.addEventListener('click', async () => {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Closing…';
+        try {
+            const res = await AdminAuth.authFetch('/api/admin/schedule-overrides', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scope, reason: reasonSelect.value, note: noteInput.value.trim() || undefined })
+            });
+            const data = await res.json();
+            if (!res.ok) { errorEl.textContent = data.error || 'Could not create override'; confirmBtn.disabled = false; confirmBtn.textContent = 'Close ' + (scope === 'Hospital' ? 'Hospital' : scope); return; }
+            close();
+            Toast.show(`${scope === 'Hospital' ? 'Hospital' : scope + ' shift'} closed.${data.affectedCount ? ` ${data.affectedCount} appointment(s) handled.` : ''}`, 'success');
+            loadActiveOverrides();
+            loadWaitingList();
+        } catch (err) {
+            errorEl.textContent = 'Could not reach the server.';
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Close ' + (scope === 'Hospital' ? 'Hospital' : scope);
+        }
+    });
+}
+
+document.querySelectorAll('[data-close-scope]').forEach(btn => {
+    btn.addEventListener('click', () => openOverrideForm(btn.dataset.closeScope));
+});
+
+async function loadActiveOverrides() {
+    const res = await AdminAuth.authFetch('/api/admin/schedule-overrides');
+    const data = await res.json();
+    const tbody = document.getElementById('overridesTableBody');
+    const emptyState = document.getElementById('overridesEmptyState');
+    tbody.innerHTML = '';
+
+    if (data.overrides.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+    }
+    emptyState.style.display = 'none';
+
+    data.overrides.forEach(o => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${o.scope === 'Hospital' ? 'Entire Hospital' : o.scope}</td>
+            <td>${escapeHtml(o.reason)}</td>
+            <td>${escapeHtml(o.note || '—')}</td>
+            <td>${o.start_date}</td>
+            <td>${escapeHtml(o.created_by_name)}</td>
+            <td><button class="action-btn action-cancel" data-lift="${o.id}">Lift</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+document.getElementById('overridesTableBody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-lift]');
+    if (!btn) return;
+    const ok = await Confirm.show('Lift this override? Bookings for this shift/hospital will reopen immediately.', {
+        title: 'Lift Override', confirmText: 'Lift'
+    });
+    if (!ok) return;
+    const res = await AdminAuth.authFetch(`/api/admin/schedule-overrides/${btn.dataset.lift}/lift`, { method: 'PATCH' });
+    const data = await res.json();
+    if (!res.ok) { Toast.show(data.error || 'Could not lift override', 'error'); return; }
+    Toast.show(`Override lifted.${data.waitlistCleared ? ` ${data.waitlistCleared} waitlisted patient(s) rebooked.` : ''}`, 'success');
+    loadActiveOverrides();
+    loadWaitingList();
+});
+
+async function loadWaitingList() {
+    const res = await AdminAuth.authFetch('/api/admin/waiting-list');
+    const data = await res.json();
+    const tbody = document.getElementById('waitlistTableBody');
+    const emptyState = document.getElementById('waitlistEmptyState');
+    tbody.innerHTML = '';
+
+    if (data.entries.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+    }
+    emptyState.style.display = 'none';
+
+    data.entries.forEach(w => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${escapeHtml(w.patient_name)}<br><small>${escapeHtml(w.phone_number)}</small></td>
+            <td>Dr. ${escapeHtml(w.doctor_name)}</td>
+            <td>${escapeHtml(w.department_name)}</td>
+            <td>${w.preferred_date}</td>
+            <td>${w.shift}</td>
+            <td>${new Date(w.created_at).toLocaleString()}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// ---- Audit Log ----
+function auditDetails(entry) {
+    if (entry.change_type === 'OperatingHours') {
+        const prev = entry.previous_hours, upd = entry.updated_hours;
+        if (!prev || !upd) return '—';
+        const parts = ['morning', 'afternoon', 'evening'].filter(s =>
+            prev[`${s}_start`] !== upd[`${s}_start`] || prev[`${s}_end`] !== upd[`${s}_end`]
+        );
+        return parts.length ? `Changed: ${parts.join(', ')}` : 'No shift times changed';
+    }
+    return entry.change_type === 'EmergencyOverrideCreated' ? 'Override created' : 'Override lifted';
+}
+
+async function loadAuditLog() {
+    const res = await AdminAuth.authFetch('/api/admin/schedule-audit-log');
+    const data = await res.json();
+    const tbody = document.getElementById('auditTableBody');
+    const emptyState = document.getElementById('auditEmptyState');
+    tbody.innerHTML = '';
+
+    if (data.entries.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+    }
+    emptyState.style.display = 'none';
+
+    data.entries.forEach(entry => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${new Date(entry.created_at).toLocaleString()}</td>
+            <td>${escapeHtml(entry.admin_name)}</td>
+            <td>${entry.change_type}</td>
+            <td>${escapeHtml(auditDetails(entry))}</td>
+            <td>${entry.affected_appointments_count}</td>
+            <td>${entry.action_taken}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
 loadHospital();
 loadFeatures();
 loadAccount();
 loadWhatsApp();
+loadOperatingHours();
+loadActiveOverrides();
+loadWaitingList();
+loadAuditLog();

@@ -98,6 +98,19 @@ async function processMessage(userPhone, phoneNumberId, incoming) {
         console.error(`No hospital configured for WhatsApp phone_number_id ${phoneNumberId}`);
         return;
     }
+    // A suspended hospital gets a clear, one-time notice instead of either
+    // silently no-op'ing (confusing — the patient gets no reply at all) or
+    // letting the conversation proceed into a booking flow that would only
+    // fail deep inside bookingService.createAppointment with no good
+    // patient-facing message. No session state is touched, so nothing about
+    // an in-progress conversation is lost if the hospital is reactivated.
+    if (hospital.status === 'Suspended') {
+        await whatsappService.sendText(hospital, userPhone, M.bi(
+            "We're sorry, this hospital's booking service is temporarily unavailable. Please contact the hospital directly for assistance.",
+            'क्षमा करें, इस अस्पताल की बुकिंग सेवा अस्थायी रूप से अनुपलब्ध है। कृपया सहायता के लिए सीधे अस्पताल से संपर्क करें।'
+        ));
+        return;
+    }
 
     // Fetched before anything else (and before entering the language context
     // below) so every message this phone receives — including the emergency/

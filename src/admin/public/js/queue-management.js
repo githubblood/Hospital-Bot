@@ -75,7 +75,7 @@ document.getElementById('qmTableBody').addEventListener('click', async (e) => {
             body: JSON.stringify({ appointment_id: appointmentId })
         });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || 'Could not advance queue'); btn.disabled = false; return; }
+        if (!res.ok) { Toast.show(data.error || 'Could not advance queue', 'error'); btn.disabled = false; return; }
         await loadAllQueues();
     } catch (err) {
         console.error('Call-next failed:', err);

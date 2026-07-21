@@ -43,7 +43,7 @@ async function handle(hospital, phone, session, incoming) {
             // Scenario 9: raced to the last token — proactively point them at the
             // next open slot rather than just bouncing to the menu.
             const doctor = await catalogService.getDoctorById(doctorId);
-            const next = await bookingService.getNextAvailable(doctor, 21);
+            const next = await bookingService.getNextAvailable(doctor, 21, hospital.id);
             await whatsappService.sendText(hospital, phone, M.slotJustFilled(next));
             await sessionManager.resetToMainMenu(phone);
             return;

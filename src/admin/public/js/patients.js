@@ -48,7 +48,7 @@ async function showHistory(patientId) {
     try {
         const res = await AdminAuth.authFetch(`/api/admin/patients/${patientId}`);
         if (!res.ok) {
-            alert('Could not load patient history');
+            Toast.show('Could not load patient history', 'error');
             return;
         }
         const patient = await res.json();

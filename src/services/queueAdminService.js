@@ -3,6 +3,7 @@ const doctorAdminService = require('./doctorAdminService');
 const whatsappService = require('./whatsappService');
 const queueBroadcastService = require('./queueBroadcastService');
 const scheduleService = require('./scheduleService');
+const appointmentStateMachine = require('./appointmentStateMachine');
 const { bi, formatTime } = require('../rule_engine/messages');
 
 // Ownership check reused everywhere below: a hospital's staff can only poll/
@@ -84,18 +85,31 @@ async function broadcastQueueUpdate(hospitalId, doctorId, shift) {
 // that doctor/date/shift queue and sends them a bilingual "your turn" nudge —
 // the optional WhatsApp step from the spec, built in rather than left out
 // since the messaging plumbing (whatsappService + bilingual bi()) already exists.
-async function markCurrentDone(hospitalId, appointmentId) {
+async function markCurrentDone(hospitalId, appointmentId, adminId) {
     const [rows] = await db.query(
         `SELECT a.*, p.hospital_id
          FROM appointments a
          JOIN patients p ON p.id = a.patient_id
-         WHERE a.id = ? AND p.hospital_id = ? AND a.status NOT IN ('Completed', 'Cancelled')`,
+         WHERE a.id = ? AND p.hospital_id = ?`,
         [appointmentId, hospitalId]
     );
     const appt = rows[0];
     if (!appt) return null;
 
-    await db.query(`UPDATE appointments SET status = 'Completed', completed_at = NOW() WHERE id = ?`, [appointmentId]);
+    // checkin_status also moves to 'In Consultation' here if it hadn't
+    // already — completing via Queue Management (not Reception's own
+    // check-in controls) shouldn't leave the Reception timeline showing the
+    // patient as still merely "Waiting" for an appointment that's now done.
+    // Only 'Confirmed' is actually allowed to become 'Completed' (see
+    // appointmentStateMachine's transition map) — the old WHERE here only
+    // ever excluded exactly Completed/Cancelled, meaning a Pending/
+    // Pending_Payment/Waitlisted/No-Show row could previously be "completed"
+    // by mistake via a stray queue-advance call. That's now correctly
+    // rejected instead.
+    const transition = await appointmentStateMachine.transitionStatus(appointmentId, 'Completed', {
+        adminId, extraFields: { completed_at: new Date(), checkin_status: 'In Consultation' }
+    });
+    if (transition.error) return null;
 
     const [nextRows] = await db.query(
         `SELECT a.id, a.token_number, p.phone_number, doc.name AS doctor_name,

@@ -153,6 +153,18 @@ const M = {
     get selectBranch() { return bi('Select a branch:', 'ब्रांच चुनें:'); },
     get selectDept() { return bi('Select a department:', 'विभाग चुनें:'); },
     get selectDoctor() { return bi('Select a doctor:', 'डॉक्टर चुनें:'); },
+    // Qualification/experience are optional (older doctors predating this
+    // field may not have them set) — only included when present, so a
+    // doctor without them still shows a clean "Fee ₹X" line instead of a
+    // blank " • Fee ₹X". Qualification stays in English either way (stored
+    // English-only, same known limitation as doctor names in Hindi mode).
+    doctorOptionDescription: (doctor) => {
+        const parts = [];
+        if (doctor.qualification) parts.push(doctor.qualification);
+        const en = [...parts, ...(doctor.experience_years ? [`${doctor.experience_years} yrs exp`] : []), `Fee ₹${doctor.consultation_fee}`].join(' • ');
+        const hi = [...parts, ...(doctor.experience_years ? [`${doctor.experience_years} वर्ष अनुभव`] : []), `फीस ₹${doctor.consultation_fee}`].join(' • ');
+        return bi(en, hi);
+    },
     get selectDate() { return bi('Select a date:', 'तारीख चुनें:'); },
     get selectShift() { return bi('Select a time slot:', 'समय चुनें:'); },
 

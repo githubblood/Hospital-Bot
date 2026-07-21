@@ -47,10 +47,10 @@ async function handle(hospital, phone, session, incoming) {
     // is friendlier than only finding out there; bookingService.createAppointment's
     // own transaction is still the real source of truth against a genuine
     // last-token race.
-    const capacity = await capacityController.validateShiftCapacity(doctorId, date, shift);
+    const capacity = await capacityController.validateShiftCapacity(doctorId, date, shift, hospital.id);
     if (!capacity.available) {
         const doctor = await catalogService.getDoctorById(doctorId);
-        const next = await bookingService.getNextAvailable(doctor, 21);
+        const next = await bookingService.getNextAvailable(doctor, 21, hospital.id);
         await whatsappService.sendText(hospital, phone, M.slotJustFilled(next));
         await bookingFlow.proceedAfterDoctor(hospital, phone, patientId, branchId, departmentId, doctorId);
         return;

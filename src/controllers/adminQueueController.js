@@ -48,7 +48,7 @@ exports.moveToNext = async (req, res) => {
         return res.status(400).json({ error: 'appointment_id is required' });
     }
 
-    const result = await queueAdminService.markCurrentDone(req.admin.hospital_id, appointmentId);
+    const result = await queueAdminService.markCurrentDone(req.admin.hospital_id, appointmentId, req.admin.id);
     if (!result) {
         return res.status(404).json({ error: 'No active (non-completed, non-cancelled) appointment found with that id' });
     }

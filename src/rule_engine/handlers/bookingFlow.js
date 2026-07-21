@@ -133,7 +133,7 @@ async function proceedAfterDept(hospital, phone, patientId, branchId, department
         }
         const options = await sendOptionMenu(
             hospital, phone, M.selectDoctor,
-            doctors.map(d => ({ id: `doctor_${d.id}`, label: `Dr. ${M.cleanDoctorName(d.name)}`, description: M.bi(`Fee ₹${d.consultation_fee}`, `फीस ₹${d.consultation_fee}`) }))
+            doctors.map(d => ({ id: `doctor_${d.id}`, label: `Dr. ${M.cleanDoctorName(d.name)}`, description: M.doctorOptionDescription(d) }))
         );
         await sessionManager.transitionState(phone, STATES.SELECT_DOCTOR, { patient_id: patientId, branch_id: branchId, department_id: departmentId, options });
         return;
@@ -150,13 +150,13 @@ async function proceedAfterDept(hospital, phone, patientId, branchId, department
 
 async function proceedAfterDoctor(hospital, phone, patientId, branchId, departmentId, doctorId) {
     const doctor = await catalogService.getDoctorById(doctorId);
-    const availability = await bookingService.getAvailability(doctor, 7);
+    const availability = await bookingService.getAvailability(doctor, 7, hospital.id);
     // Scenario 9: only surface dates that still have at least one free token.
     const openDates = availability.filter(d => d.totalRemaining > 0);
 
     if (openDates.length === 0) {
         // Every scheduled day in the window is fully booked — look further out.
-        const next = await bookingService.getNextAvailable(doctor, 21);
+        const next = await bookingService.getNextAvailable(doctor, 21, hospital.id);
         await whatsappService.sendText(hospital, phone, M.fullyBooked(doctor.name, next));
         await sessionManager.resetToMainMenu(phone);
         return;

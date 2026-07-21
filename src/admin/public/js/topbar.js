@@ -26,7 +26,7 @@ function renderSidebarUser() {
     const secondary = admin.name ? (admin.role || admin.hospital_name || '') : (admin.hospital_name || '');
     el.innerHTML = `
         ${Avatar.html(primary)}
-        <div>
+        <div class="user-info">
             <div class="name">${escapeHtml(primary)}</div>
             <div class="email">${escapeHtml(secondary)}</div>
         </div>
@@ -223,7 +223,7 @@ if (reportBtn) {
             a.remove();
             URL.revokeObjectURL(url);
         } catch (err) {
-            alert('Could not generate report.');
+            Toast.show('Could not generate report.', 'error');
         } finally {
             reportBtn.disabled = false;
             reportBtn.innerHTML = originalText;
@@ -263,6 +263,46 @@ document.querySelectorAll('.nav-section-header').forEach(header => {
 const collapsedSections = getCollapsedSections();
 Object.keys(collapsedSections).forEach(section => {
     if (collapsedSections[section]) setSectionCollapsed(section, true);
+});
+
+// ---- Sidebar collapse/expand (desktop only) ----
+// Single source of truth is the `sidebar-collapsed` class on <html>, not on
+// .sidebar itself — the same class is already applied pre-paint by a tiny
+// inline script in <head> (avoiding a flash of the expanded sidebar on a
+// page load where the user had it collapsed), so this only needs to keep
+// the toggle button's own state in sync and handle clicks; it never needs
+// to apply the class itself on initial load.
+const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
+const collapseBtn = document.getElementById('sidebarCollapseBtn');
+
+function syncCollapseButton(collapsed) {
+    if (!collapseBtn) return;
+    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+    const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    collapseBtn.setAttribute('aria-label', label);
+    collapseBtn.title = label;
+}
+
+if (collapseBtn) {
+    syncCollapseButton(document.documentElement.classList.contains('sidebar-collapsed'));
+    collapseBtn.addEventListener('click', () => {
+        const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+        syncCollapseButton(collapsed);
+    });
+}
+
+// Tooltip text (shown only in the collapsed state, via CSS's
+// ::after{content:attr(data-tooltip)}) and each link's aria-label are both
+// derived from the same .nav-label span already in the markup, rather than
+// hand-duplicating every module name a third time — one label, three uses
+// (visible text, tooltip, screen reader).
+document.querySelectorAll('.sidebar nav a, .sidebar-logout-btn').forEach(el => {
+    const label = el.querySelector('.nav-label');
+    if (!label) return;
+    const text = label.textContent.trim();
+    el.setAttribute('data-tooltip', text);
+    if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', text);
 });
 
 // ---- Mobile sidebar drawer ----

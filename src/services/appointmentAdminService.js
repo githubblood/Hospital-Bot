@@ -1,31 +1,53 @@
 const db = require('../config/db');
 const whatsappService = require('./whatsappService');
+const appointmentStateMachine = require('./appointmentStateMachine');
 const { bi, cleanDoctorName, formatDate, formatDateDisplay, formatTime } = require('../rule_engine/messages');
+
+// Safety cap (Stage 3.5 perf review) — this had no LIMIT at all before, so a
+// hospital's full appointment history (or a filterless search) returned in
+// one unbounded response. Not real pagination (no offset/page UI exists yet
+// on any caller), just a backstop against an unbounded pull; every existing
+// caller stays byte-for-byte compatible unless a hospital genuinely has more
+// than this many matching rows.
+const MAX_RESULTS = 1000;
 
 // hospitalId is optional throughout: omitted, the query is unscoped (used by
 // the static-ADMIN_API_KEY automation routes, matching their existing
 // behavior); provided, results are restricted to that hospital's patients
 // (used by the JWT-authenticated admin panel, which belongs to one hospital).
 
+// search/departmentId/appointmentId are additive filters (Reception's
+// appointment search reuses this exact function rather than a second query) —
+// every existing caller (appointments.html, the static-key automation
+// routes) simply never passes them, so nothing about their behavior changes.
 async function listAppointments(hospitalId, filters = {}) {
-    const { date, status, doctorId } = filters;
+    const { date, status, doctorId, departmentId, appointmentId, search } = filters;
     const params = [];
     let where = '1=1';
     if (hospitalId) { where += ' AND p.hospital_id = ?'; params.push(hospitalId); }
     if (date) { where += ' AND a.appointment_date = ?'; params.push(date); }
     if (status) { where += ' AND a.status = ?'; params.push(status); }
     if (doctorId) { where += ' AND a.doctor_id = ?'; params.push(doctorId); }
+    if (departmentId) { where += ' AND doc.department_id = ?'; params.push(departmentId); }
+    if (appointmentId) { where += ' AND a.id = ?'; params.push(appointmentId); }
+    if (search) {
+        where += ' AND (p.name LIKE ? OR p.phone_number LIKE ? OR p.uhid LIKE ?)';
+        params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
 
     const [rows] = await db.query(
-        `SELECT a.id, a.appointment_date, a.shift, a.token_number, a.expected_time, a.status, a.payment_status,
+        `SELECT a.id, a.doctor_id, a.appointment_date, a.shift, a.token_number, a.expected_time, a.status, a.payment_status,
+                a.checkin_status, a.checked_in_at, a.booking_source, a.cancel_reason, a.cancelled_at,
                 a.reminder_sent, a.reminder_sent_at, a.rescheduled_from, a.rescheduled_to,
-                p.name AS patient_name, p.phone_number, doc.name AS doctor_name
+                p.id AS patient_id, p.name AS patient_name, p.phone_number, p.uhid AS patient_uhid,
+                doc.name AS doctor_name, doc.department_id
          FROM appointments a
          JOIN patients p ON p.id = a.patient_id
          JOIN doctors doc ON doc.id = a.doctor_id
          WHERE ${where}
-         ORDER BY a.appointment_date DESC, a.expected_time ASC`,
-        params
+         ORDER BY a.appointment_date DESC, a.expected_time ASC
+         LIMIT ?`,
+        [...params, MAX_RESULTS]
     );
     return rows.map(r => ({ ...r, appointment_date: formatDate(r.appointment_date), doctor_name: cleanDoctorName(r.doctor_name) }));
 }
@@ -70,11 +92,11 @@ async function loadForNotify(appointmentId, expectedStatus, hospitalId) {
     return rows[0] || null;
 }
 
-async function approveAppointment(appointmentId, hospitalId) {
+async function approveAppointment(appointmentId, hospitalId, adminId) {
     const appt = await loadForNotify(appointmentId, 'Pending', hospitalId);
     if (!appt) return null;
 
-    await db.query(`UPDATE appointments SET status = 'Confirmed' WHERE id = ?`, [appointmentId]);
+    await appointmentStateMachine.transitionStatus(appointmentId, 'Confirmed', { adminId });
     const dn = cleanDoctorName(appt.doctor_name);
     await whatsappService.sendText(
         hospitalCreds(appt),
@@ -87,11 +109,45 @@ async function approveAppointment(appointmentId, hospitalId) {
     return { appointmentId: Number(appointmentId), status: 'Confirmed' };
 }
 
-async function rejectAppointment(appointmentId, hospitalId, reason) {
+// Moved here from adminController.js during the post-Reception stabilization
+// pass — a controller was writing `UPDATE appointments SET status = ...`
+// directly, the one remaining violation of "every status change goes
+// through the shared service" found in that audit. Same Pending_Payment ->
+// Confirmed transition, same notification, now with an audit entry too
+// (this transition previously had none at all).
+async function confirmPayment(appointmentId, hospitalId, adminId) {
+    const appt = await loadForNotify(appointmentId, 'Pending_Payment', hospitalId);
+    if (!appt) return null;
+
+    await appointmentStateMachine.transitionStatus(appointmentId, 'Confirmed', {
+        adminId, extraFields: { payment_status: 'Paid' }
+    });
+    const dn = cleanDoctorName(appt.doctor_name);
+    await whatsappService.sendText(
+        hospitalCreds(appt),
+        appt.phone_number,
+        bi(
+            `✅ Payment received. Your appointment on ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) is confirmed. Token #${appt.token_number}, expected time ${formatTime(appt.expected_time)}.`,
+            `✅ भुगतान प्राप्त हुआ। ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) की आपकी अपॉइंटमेंट कन्फर्म है। टोकन #${appt.token_number}, अनुमानित समय ${formatTime(appt.expected_time)}।`
+        )
+    );
+    return { appointmentId: Number(appointmentId), status: 'Confirmed', payment_status: 'Paid' };
+}
+
+// Fixed a real pre-existing bug while adding Reception's cancellation audit
+// trail: this and adminCancelAppointment below both accepted a `reason` and
+// used it in the outbound WhatsApp message, but never actually persisted it
+// to cancel_reason/cancelled_at — the columns existed (added for the
+// WhatsApp self-cancel path, bookingService.cancelAppointment) but these two
+// admin-initiated paths silently never wrote them. Now both do, plus the new
+// cancelled_by + history entry.
+async function rejectAppointment(appointmentId, hospitalId, reason, adminId) {
     const appt = await loadForNotify(appointmentId, 'Pending', hospitalId);
     if (!appt) return null;
 
-    await db.query(`UPDATE appointments SET status = 'Cancelled' WHERE id = ?`, [appointmentId]);
+    await appointmentStateMachine.transitionStatus(appointmentId, 'Cancelled', {
+        adminId, extraFields: { cancelled_at: new Date(), cancel_reason: reason, cancelled_by: adminId || null }
+    });
     const dn = cleanDoctorName(appt.doctor_name);
     await whatsappService.sendText(
         hospitalCreds(appt),
@@ -108,9 +164,16 @@ async function rejectAppointment(appointmentId, hospitalId, reason) {
 // distinct from reject, and from the patient's own self-service cancel in the
 // WhatsApp "My Appointments" flow (bookingService.cancelAppointment), which is
 // scoped by patient_id instead and doesn't need to notify the initiator.
-async function adminCancelAppointment(appointmentId, hospitalId, reason) {
+async function adminCancelAppointment(appointmentId, hospitalId, reason, adminId) {
     const params = [appointmentId];
-    let where = "a.id = ? AND a.status != 'Cancelled'";
+    // Ownership/existence only — "is this row's current status even
+    // allowed to become Cancelled" is now the state machine's job below, not
+    // a status filter duplicated here. (Previously excluded exactly
+    // status='Cancelled'; now also correctly rejects trying to "cancel" an
+    // already-Completed/Rescheduled/No-Show row, which the old WHERE let
+    // through — a real gap, since none of those should ever go back to
+    // Cancelled.)
+    let where = 'a.id = ?';
     if (hospitalId) { where += ' AND p.hospital_id = ?'; params.push(hospitalId); }
 
     const [rows] = await db.query(
@@ -126,7 +189,14 @@ async function adminCancelAppointment(appointmentId, hospitalId, reason) {
     const appt = rows[0];
     if (!appt) return null;
 
-    await db.query(`UPDATE appointments SET status = 'Cancelled' WHERE id = ?`, [appointmentId]);
+    const transition = await appointmentStateMachine.transitionStatus(appointmentId, 'Cancelled', {
+        adminId, extraFields: { cancelled_at: new Date(), cancel_reason: reason, cancelled_by: adminId || null }
+    });
+    // Same external contract as before this refactor: any reason the
+    // appointment can't be cancelled (not found, or already terminal) is a
+    // single "no active appointment" 404 from the controller — not a new
+    // response shape a caller would need to handle differently.
+    if (transition.error) return null;
     const dn = cleanDoctorName(appt.doctor_name);
     await whatsappService.sendText(
         hospitalCreds(appt),
@@ -180,5 +250,5 @@ async function deleteCancelledAppointments(hospitalId) {
 
 module.exports = {
     listAppointments, getAppointmentById, approveAppointment, rejectAppointment,
-    adminCancelAppointment, deleteAppointment, deleteCancelledAppointments
+    adminCancelAppointment, confirmPayment, deleteAppointment, deleteCancelledAppointments
 };

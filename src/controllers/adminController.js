@@ -1,62 +1,46 @@
-const db = require('../config/db');
-const whatsappService = require('../services/whatsappService');
 const appointmentAdminService = require('../services/appointmentAdminService');
 const doctorAdminService = require('../services/doctorAdminService');
 const queueAdminService = require('../services/queueAdminService');
 const settingsAdminService = require('../services/settingsAdminService');
-const { bi, formatDateDisplay, formatTime } = require('../rule_engine/messages');
 
 // Reception/staff-side confirmation that an offline/manual payment (cash, UPI,
 // card at counter) came through. There's no payment gateway wired up here — the
 // blueprint didn't specify one — so this is the manual completion of the
-// Pending_Payment -> Confirmed transition described in the schema.
+// Pending_Payment -> Confirmed transition described in the schema. The
+// transition itself (and its audit entry) lives in appointmentAdminService —
+// controllers never write appointment status directly (stabilization pass).
+//
+// hospital_id is now REQUIRED in the body (Stage 3.5 fix — this route used to
+// call the service with hospitalId undefined, which made its WHERE clause
+// unscoped: since ADMIN_API_KEY is one single global secret shared across
+// every tenant, any holder of it could confirm-payment/approve/reject ANY
+// hospital's appointment by numeric id alone. toggleDoctorLeave/advanceQueue/
+// updateHospitalConfig below already required hospital_id for this exact
+// reason — this brings these three in line with that same convention).
 exports.confirmPayment = async (req, res) => {
-    const appointmentId = req.params.id;
-
-    const [rows] = await db.query(
-        `SELECT a.*, p.phone_number, h.whatsapp_business_phone_id, h.whatsapp_access_token
-         FROM appointments a
-         JOIN patients p ON p.id = a.patient_id
-         JOIN doctors d ON d.id = a.doctor_id
-         JOIN hospitals h ON h.id = p.hospital_id
-         WHERE a.id = ? AND a.status = 'Pending_Payment'`,
-        [appointmentId]
-    );
-
-    if (rows.length === 0) {
+    const { hospital_id: hospitalId } = req.body || {};
+    if (!hospitalId) {
+        return res.status(400).json({ error: 'hospital_id is required' });
+    }
+    const result = await appointmentAdminService.confirmPayment(req.params.id, hospitalId, undefined);
+    if (!result) {
         return res.status(404).json({ error: 'No pending-payment appointment found with that id' });
     }
-
-    const appt = rows[0];
-    await db.query(
-        `UPDATE appointments SET status = 'Confirmed', payment_status = 'Paid' WHERE id = ?`,
-        [appointmentId]
-    );
-
-    const hospital = {
-        whatsapp_business_phone_id: appt.whatsapp_business_phone_id,
-        whatsapp_access_token: appt.whatsapp_access_token
-    };
-    await whatsappService.sendText(
-        hospital,
-        appt.phone_number,
-        bi(
-            `✅ Payment received. Your appointment on ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) is confirmed. Token #${appt.token_number}, expected time ${formatTime(appt.expected_time)}.`,
-            `✅ भुगतान प्राप्त हुआ। ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) की आपकी अपॉइंटमेंट कन्फर्म है। टोकन #${appt.token_number}, अनुमानित समय ${formatTime(appt.expected_time)}।`
-        )
-    );
-
-    res.json({ success: true, appointmentId: Number(appointmentId), status: 'Confirmed', payment_status: 'Paid' });
+    res.json({ success: true, ...result });
 };
 
 // Scenario 5 — Reception Approval Flow. Staff review a Pending request and
 // either approve it (Pending -> Confirmed) or reject it (Pending -> Cancelled);
-// the patient is notified over WhatsApp of the async decision. Unscoped by
-// hospital (no hospitalId passed) — matches this route's existing behavior
-// under the single global ADMIN_API_KEY. The JWT-authenticated admin panel
-// calls the same service functions WITH a hospitalId (see adminAppointmentsController.js).
+// the patient is notified over WhatsApp of the async decision. The
+// JWT-authenticated admin panel calls the same service functions WITH a
+// hospitalId (see adminAppointmentsController.js) — this route now requires
+// the caller supply the same, see confirmPayment's comment above.
 exports.approveAppointment = async (req, res) => {
-    const result = await appointmentAdminService.approveAppointment(req.params.id);
+    const { hospital_id: hospitalId } = req.body || {};
+    if (!hospitalId) {
+        return res.status(400).json({ error: 'hospital_id is required' });
+    }
+    const result = await appointmentAdminService.approveAppointment(req.params.id, hospitalId);
     if (!result) {
         return res.status(404).json({ error: 'No pending appointment found with that id' });
     }
@@ -64,8 +48,12 @@ exports.approveAppointment = async (req, res) => {
 };
 
 exports.rejectAppointment = async (req, res) => {
-    const reason = (req.body && req.body.reason) ? String(req.body.reason) : null;
-    const result = await appointmentAdminService.rejectAppointment(req.params.id, undefined, reason);
+    const { hospital_id: hospitalId, reason: rawReason } = req.body || {};
+    if (!hospitalId) {
+        return res.status(400).json({ error: 'hospital_id is required' });
+    }
+    const reason = rawReason ? String(rawReason) : null;
+    const result = await appointmentAdminService.rejectAppointment(req.params.id, hospitalId, reason);
     if (!result) {
         return res.status(404).json({ error: 'No pending appointment found with that id' });
     }

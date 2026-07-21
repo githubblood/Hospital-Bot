@@ -14,11 +14,11 @@ const M = require('../messages');
 // bookingFlow.proceedAfterDoctor.
 async function startReschedule(hospital, phone, appointmentId, doctorId, patientId) {
     const doctor = await catalogService.getDoctorById(doctorId);
-    const availability = await bookingService.getAvailability(doctor, 7);
+    const availability = await bookingService.getAvailability(doctor, 7, hospital.id);
     const openDates = availability.filter(d => d.totalRemaining > 0);
 
     if (openDates.length === 0) {
-        const next = await bookingService.getNextAvailable(doctor, 21);
+        const next = await bookingService.getNextAvailable(doctor, 21, hospital.id);
         await whatsappService.sendText(hospital, phone, M.fullyBooked(doctor.name, next));
         // Silent reset — the original appointment is untouched; nothing more
         // to say beyond the message just sent.
@@ -56,10 +56,10 @@ async function handleSelectDate(hospital, phone, session, incoming) {
 
     const date = selected.id.replace('date_', '');
     const doctor = await catalogService.getDoctorById(doctorId);
-    const openShifts = (await bookingService.getShiftsWithCapacity(doctor, date)).filter(s => s.remaining > 0);
+    const openShifts = (await bookingService.getShiftsWithCapacity(doctor, date, hospital.id)).filter(s => s.remaining > 0);
 
     if (openShifts.length === 0) {
-        const next = await bookingService.getNextAvailable(doctor, 21);
+        const next = await bookingService.getNextAvailable(doctor, 21, hospital.id);
         await whatsappService.sendText(hospital, phone, M.dateFilledUp(next));
         await sessionManager.resetToMainMenu(phone);
         return;
@@ -94,10 +94,10 @@ async function handleSelectShift(hospital, phone, session, incoming) {
     // Re-validate right before asking for final confirmation — same reasoning
     // as selectShift.js's booking-flow counterpart: the list shown a moment
     // ago can go stale (another patient took the last token).
-    const capacity = await capacityController.validateShiftCapacity(doctorId, date, shift);
+    const capacity = await capacityController.validateShiftCapacity(doctorId, date, shift, hospital.id);
     if (!capacity.available) {
         const doctor = await catalogService.getDoctorById(doctorId);
-        const next = await bookingService.getNextAvailable(doctor, 21);
+        const next = await bookingService.getNextAvailable(doctor, 21, hospital.id);
         await whatsappService.sendText(hospital, phone, M.slotJustFilled(next));
         await startReschedule(hospital, phone, appointmentId, doctorId, patientId);
         return;
@@ -140,7 +140,7 @@ async function handleConfirm(hospital, phone, session, incoming) {
             // Scenario 9: raced to the last token — same graceful redirect as
             // the original booking flow's confirmBooking.js.
             const doctor = await catalogService.getDoctorById(doctorId);
-            const next = await bookingService.getNextAvailable(doctor, 21);
+            const next = await bookingService.getNextAvailable(doctor, 21, hospital.id);
             await whatsappService.sendText(hospital, phone, M.slotJustFilled(next));
             await sessionManager.resetToMainMenu(phone);
             return;

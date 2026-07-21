@@ -1,6 +1,15 @@
 // Auth guard, sidebar user block, logout, search, and activity are all
 // wired centrally by topbar.js (loaded before this file).
 
+// Weekday + short date for chart tooltips ("Mon, Jul 20") — full enough to
+// read as "details for this one day" without crowding the x-axis, which
+// keeps the terser MM-DD labels. Local Y/M/D construction (not
+// toISOString()), same IST off-by-one fix already applied elsewhere in this
+// project (see topbar.js's date chip).
+function formatFullDate(isoDate) {
+    return new Date(isoDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 function statusBadge(status) {
     const cls = 'badge-' + status.toLowerCase();
     return `<span class="badge ${cls}">${status}</span>`;
@@ -64,7 +73,10 @@ async function loadCharts() {
         const c = await res.json();
 
         ChartKit.renderLineChart(document.getElementById('chartPerDay'), c.appointmentsPerDay, {
-            xKey: 'd', yKey: 'cnt', formatLabel: (v) => v.slice(5)
+            xKey: 'd', yKey: 'cnt', formatLabel: (v) => v.slice(5),
+            formatValue: (v) => `${v} appt${v === 1 ? '' : 's'}`,
+            formatTooltipLabel: formatFullDate,
+            onPointClick: (d) => { window.location.href = `appointments.html?date=${d.d}`; }
         });
         ChartKit.renderBarChart(document.getElementById('chartByDept'), c.appointmentsByDepartment, {
             xKey: 'department', yKey: 'cnt', color: ChartKit.palette()[1]
@@ -77,7 +89,9 @@ async function loadCharts() {
             d: r.d, rate: r.total > 0 ? Math.round((r.cancelled / r.total) * 1000) / 10 : 0
         }));
         ChartKit.renderLineChart(document.getElementById('chartCancellation'), cancellationRate, {
-            xKey: 'd', yKey: 'rate', color: ChartKit.palette()[7], formatValue: (v) => v + '%', formatLabel: (v) => v.slice(5)
+            xKey: 'd', yKey: 'rate', color: ChartKit.palette()[7], formatValue: (v) => v + '%', formatLabel: (v) => v.slice(5),
+            formatTooltipLabel: formatFullDate,
+            onPointClick: (d) => { window.location.href = `appointments.html?date=${d.d}&status=Cancelled`; }
         });
 
         const hourData = Array.from({ length: 24 }, (_, h) => ({
@@ -223,7 +237,7 @@ function renderQueueUpdate(data) {
 function loadQueue() {
     queueDoctorId = document.getElementById('queueDoctorSelect').value;
     queueShift = document.getElementById('queueShiftSelect').value;
-    if (!queueDoctorId) { alert('Select a doctor first.'); return; }
+    if (!queueDoctorId) { Toast.show('Select a doctor first.', 'error'); return; }
 
     if (queueEventSource) queueEventSource.close();
 
@@ -244,7 +258,7 @@ function loadQueue() {
 document.getElementById('loadQueueBtn').addEventListener('click', loadQueue);
 
 document.getElementById('markDoneBtn').addEventListener('click', async () => {
-    if (!currentAppointmentId) { alert('No current patient in queue.'); return; }
+    if (!currentAppointmentId) { Toast.show('No current patient in queue.', 'error'); return; }
     try {
         const res = await AdminAuth.authFetch('/api/admin/queue/next', {
             method: 'PATCH',
@@ -252,7 +266,7 @@ document.getElementById('markDoneBtn').addEventListener('click', async () => {
             body: JSON.stringify({ appointment_id: currentAppointmentId })
         });
         const data = await res.json();
-        if (!res.ok) alert(data.error || 'Could not mark as done');
+        if (!res.ok) Toast.show(data.error || 'Could not mark as done', 'error');
         // No manual refresh — the server pushes the updated queue over SSE.
     } catch (err) {
         console.error('Mark-done failed:', err);

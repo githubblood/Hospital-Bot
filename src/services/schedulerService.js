@@ -60,9 +60,9 @@ async function sendDueReminders() {
 function start() {
     if (intervalHandle) return;
 
-    sendDueReminders().catch(err => console.error('Reminder scan failed:', err.message));
+    sendDueReminders().catch(err => console.error('Reminder scan failed:', err.message || err));
     intervalHandle = setInterval(() => {
-        sendDueReminders().catch(err => console.error('Reminder scan failed:', err.message));
+        sendDueReminders().catch(err => console.error('Reminder scan failed:', err.message || err));
     }, SCAN_INTERVAL_MS);
 }
 

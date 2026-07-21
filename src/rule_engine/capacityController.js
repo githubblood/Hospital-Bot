@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const catalogService = require('../services/catalogService');
 const scheduleService = require('../services/scheduleService');
+const scheduleOverrideService = require('../services/scheduleOverrideService');
 
 // Distinct failure reasons so a caller can message the patient precisely
 // (on leave vs. not scheduled that day vs. genuinely fully booked) instead of
@@ -9,7 +10,8 @@ const REASON = {
     NOT_FOUND: 'NOT_FOUND',
     ON_LEAVE: 'ON_LEAVE',
     NOT_SCHEDULED: 'NOT_SCHEDULED',
-    FULL: 'FULL'
+    FULL: 'FULL',
+    OVERRIDDEN: 'OVERRIDDEN'
 };
 
 // Pure validation — no session or messaging side effects — so it's reusable
@@ -22,13 +24,16 @@ const REASON = {
 // A caller reacting to `available: false` should route the session back to
 // STATES.SELECT_DATE (re-show date/shift options) rather than treat this as
 // an unexpected error — the requested shift simply isn't bookable right now.
-async function validateShiftCapacity(doctorId, requestedDate, requestedShift) {
+async function validateShiftCapacity(doctorId, requestedDate, requestedShift, hospitalId = null) {
     const doctor = await catalogService.getDoctorById(doctorId);
     if (!doctor) {
         return { available: false, reason: REASON.NOT_FOUND, remaining: 0 };
     }
     if (doctor.is_on_leave) {
         return { available: false, reason: REASON.ON_LEAVE, remaining: 0 };
+    }
+    if (hospitalId && await scheduleOverrideService.isClosed({ hospitalId, dateStr: requestedDate, shift: requestedShift })) {
+        return { available: false, reason: REASON.OVERRIDDEN, remaining: 0 };
     }
 
     const shiftWindow = scheduleService.getShiftWindow(doctor, requestedDate, requestedShift);

@@ -20,7 +20,8 @@ async function listDoctors(hospitalId, search) {
     }
 
     const [rows] = await db.query(
-        `SELECT doc.id, doc.department_id, doc.name, doc.is_on_leave, doc.consultation_fee, doc.schedule_json,
+        `SELECT doc.id, doc.department_id, doc.name, doc.qualification, doc.experience_years,
+                doc.is_on_leave, doc.consultation_fee, doc.schedule_json,
                 dep.name_en AS department_name,
                 COUNT(DISTINCT a.patient_id) AS patient_count,
                 COUNT(a.id) AS appointment_count
@@ -40,7 +41,8 @@ async function listDoctors(hospitalId, search) {
 // belongs to this hospital, so one hospital's admin can't read/edit another's.
 async function getDoctor(hospitalId, doctorId) {
     const [rows] = await db.query(
-        `SELECT doc.id, doc.department_id, doc.name, doc.is_on_leave, doc.consultation_fee, doc.schedule_json,
+        `SELECT doc.id, doc.department_id, doc.name, doc.qualification, doc.experience_years,
+                doc.is_on_leave, doc.consultation_fee, doc.schedule_json,
                 dep.name_en AS department_name
          FROM doctors doc
          JOIN departments dep ON dep.id = doc.department_id
@@ -52,19 +54,19 @@ async function getDoctor(hospitalId, doctorId) {
     return { ...rows[0], name: cleanDoctorName(rows[0].name), schedule_json: JSON.parse(rows[0].schedule_json) };
 }
 
-async function createDoctor(hospitalId, { department_id, name, consultation_fee, schedule_json, is_on_leave }) {
+async function createDoctor(hospitalId, { department_id, name, qualification, experience_years, consultation_fee, schedule_json, is_on_leave }) {
     const owns = await catalogService.departmentBelongsToHospital(department_id, hospitalId);
     if (!owns) return { error: 'DEPARTMENT_NOT_FOUND' };
 
     const [result] = await db.query(
-        `INSERT INTO doctors (department_id, name, consultation_fee, schedule_json, is_on_leave)
-         VALUES (?, ?, ?, ?, ?)`,
-        [department_id, name, consultation_fee, JSON.stringify(schedule_json), !!is_on_leave]
+        `INSERT INTO doctors (department_id, name, qualification, experience_years, consultation_fee, schedule_json, is_on_leave)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [department_id, name, qualification || null, experience_years != null ? experience_years : 0, consultation_fee, JSON.stringify(schedule_json), !!is_on_leave]
     );
     return { id: result.insertId };
 }
 
-async function updateDoctor(hospitalId, doctorId, { department_id, name, consultation_fee, schedule_json, is_on_leave }) {
+async function updateDoctor(hospitalId, doctorId, { department_id, name, qualification, experience_years, consultation_fee, schedule_json, is_on_leave }) {
     const existing = await getDoctor(hospitalId, doctorId);
     if (!existing) return { error: 'NOT_FOUND' };
 
@@ -74,10 +76,12 @@ async function updateDoctor(hospitalId, doctorId, { department_id, name, consult
     }
 
     await db.query(
-        `UPDATE doctors SET department_id = ?, name = ?, consultation_fee = ?, schedule_json = ?, is_on_leave = ? WHERE id = ?`,
+        `UPDATE doctors SET department_id = ?, name = ?, qualification = ?, experience_years = ?, consultation_fee = ?, schedule_json = ?, is_on_leave = ? WHERE id = ?`,
         [
             department_id || existing.department_id,
             name || existing.name,
+            qualification !== undefined ? (qualification || null) : existing.qualification,
+            experience_years != null ? experience_years : existing.experience_years,
             consultation_fee != null ? consultation_fee : existing.consultation_fee,
             JSON.stringify(schedule_json || existing.schedule_json),
             is_on_leave != null ? !!is_on_leave : existing.is_on_leave,

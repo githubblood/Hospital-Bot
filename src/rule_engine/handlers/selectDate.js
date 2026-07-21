@@ -27,10 +27,10 @@ async function handle(hospital, phone, session, incoming) {
 
     const doctor = await catalogService.getDoctorById(doctorId);
     // Scenario 9: only offer shifts that still have free tokens on this date.
-    const openShifts = (await bookingService.getShiftsWithCapacity(doctor, date)).filter(s => s.remaining > 0);
+    const openShifts = (await bookingService.getShiftsWithCapacity(doctor, date, hospital.id)).filter(s => s.remaining > 0);
 
     if (openShifts.length === 0) {
-        const next = await bookingService.getNextAvailable(doctor, 21);
+        const next = await bookingService.getNextAvailable(doctor, 21, hospital.id);
         await whatsappService.sendText(hospital, phone, M.dateFilledUp(next));
         // Silent reset — the message is already a complete outcome; resending
         // the full greeting right behind it read as redundant.
