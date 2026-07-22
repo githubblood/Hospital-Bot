@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const catalogService = require('./catalogService');
+const subscriptionService = require('./subscriptionService');
 const { cleanDoctorName } = require('../rule_engine/messages');
 
 // Names are shown cleaned everywhere in the admin panel (some seed data has
@@ -15,7 +16,7 @@ async function listDoctors(hospitalId, search) {
     const params = [hospitalId];
     let where = 'b.hospital_id = ?';
     if (search) {
-        where += ' AND doc.name LIKE ?';
+        where += ' AND doc.name ILIKE ?';
         params.push(`%${search}%`);
     }
 
@@ -30,7 +31,7 @@ async function listDoctors(hospitalId, search) {
          JOIN branches b ON b.id = dep.branch_id
          LEFT JOIN appointments a ON a.doctor_id = doc.id
          WHERE ${where}
-         GROUP BY doc.id
+         GROUP BY doc.id, dep.id, dep.name_en
          ORDER BY dep.id, doc.id`,
         params
     );
@@ -55,6 +56,12 @@ async function getDoctor(hospitalId, doctorId) {
 }
 
 async function createDoctor(hospitalId, { department_id, name, qualification, experience_years, consultation_fee, schedule_json, is_on_leave }) {
+    // Stage 4C: plan-limit guard — see branchAdminService.createBranch's
+    // comment on the same check for the "why" (allowed by default for every
+    // pre-Stage-4C hospital).
+    const limitCheck = await subscriptionService.checkLimit(hospitalId, 'doctors');
+    if (!limitCheck.allowed) return { error: limitCheck.error, message: limitCheck.message };
+
     const owns = await catalogService.departmentBelongsToHospital(department_id, hospitalId);
     if (!owns) return { error: 'DEPARTMENT_NOT_FOUND' };
 

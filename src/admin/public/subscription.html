@@ -4,89 +4,40 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>(function(){try{document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'light');if(localStorage.getItem('sidebarCollapsed')==='true')document.documentElement.classList.add('sidebar-collapsed');}catch(e){}})();</script>
-<title>Doctors — Hospital Chatbot Admin</title>
+<title>Subscription — Hospital Chatbot Admin</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="css/style.css">
 <style>
-    #formPanel {
-        display: none;
-        background: var(--card-bg);
-        border-radius: 10px;
-        box-shadow: var(--shadow);
-        padding: 1.25rem;
-        margin-bottom: 1.5rem;
-    }
-    #formPanel h2 { margin: 0 0 1rem; font-size: 1rem; color: var(--dark); }
-    .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .form-row .form-group { flex: 1; min-width: 180px; margin-bottom: 0; }
+    .sub-status-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+    .sub-plan-name { font-size: 1.3rem; font-weight: 700; color: var(--dark); }
+    .sub-status-badge { padding: 0.25rem 0.7rem; font-size: 0.78rem; }
+    .status-trial, .status-grace-period { background: var(--warning); color: #4d3b06; }
+    .status-active { background: var(--success); }
+    .status-expired, .status-suspended { background: var(--danger); }
+    .status-no-plan-assigned { background: var(--text-muted); }
 
-    .working-days-row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
-    .wd-check {
-        display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.75rem;
-        border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem;
-        color: var(--text-primary); cursor: pointer; transition: var(--transition);
-    }
-    .wd-check:has(input:checked) { border-color: var(--primary); background: var(--primary-light); color: var(--primary-dark); }
-    .wd-check input { margin: 0; }
+    .sub-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem 1.5rem; }
+    .sub-info-item .label { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.2rem; }
+    .sub-info-item .value { font-size: 0.95rem; font-weight: 600; color: var(--dark); }
 
-    .section-label { display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--dark); font-size: 0.88rem; }
-    .form-actions { display: flex; gap: 0.75rem; }
-    .form-actions .btn { width: auto; }
-    .error-text { margin-top: 0; }
+    .usage-row { margin-bottom: 1.1rem; }
+    .usage-row:last-child { margin-bottom: 0; }
+    .usage-row-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.35rem; }
+    .usage-row-head .name { font-size: 0.88rem; font-weight: 600; color: var(--dark); }
+    .usage-row-head .count { font-size: 0.82rem; color: var(--text-muted); }
+    .usage-bar-track { height: 8px; border-radius: 5px; background: var(--light); overflow: hidden; }
+    .usage-bar-fill { height: 100%; border-radius: 5px; background: var(--primary); transition: width 0.3s ease; }
+    .usage-bar-fill.warn { background: var(--warning); }
+    .usage-bar-fill.danger { background: var(--danger); }
+    .usage-not-tracked { font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
 
-    /* Toolbar: local search + filter, above the card grid. */
-    .doctor-toolbar { display: flex; gap: 0.75rem; margin-bottom: 1.25rem; }
-    .doctor-toolbar input {
-        flex: 1; padding: 0.55rem 0.75rem; border: 1px solid var(--border);
-        border-radius: 8px; font-size: 0.88rem; background: var(--card-bg); color: var(--text-primary);
-    }
+    .module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; }
+    .module-chip { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 0.9rem; border-radius: 8px; background: var(--light); font-size: 0.85rem; font-weight: 600; color: var(--dark); }
+    .module-chip .tag { font-size: 0.72rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 20px; }
+    .module-chip .tag.on { background: var(--success); color: #fff; }
+    .module-chip .tag.off { background: var(--border); color: var(--text-muted); }
 
-    .doctor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
-    .doctor-card {
-        background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border);
-        padding: 1.1rem; box-shadow: var(--shadow); transition: var(--transition);
-    }
-    .doctor-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
-    .doctor-card-top { display: flex; gap: 0.75rem; align-items: flex-start; margin-bottom: 0.9rem; }
-    .doctor-card-top .avatar-circle { width: 46px; height: 46px; font-size: 0.95rem; }
-    .doctor-card-name { font-weight: 700; color: var(--dark); font-size: 0.95rem; }
-    .doctor-card-dept { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem; }
-    .doctor-card-qual { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.35rem; }
-    .status-pill {
-        display: inline-flex; align-items: center; gap: 0.35rem;
-        font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 20px;
-    }
-    .status-pill.available { background: var(--primary-light); color: var(--primary-dark); }
-    .status-pill.leave { background: var(--warning-tint-bg); color: var(--warning-tint-text); }
-    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-
-    .doctor-stats-row {
-        display: flex; justify-content: space-around;
-        padding: 0.75rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
-        margin-bottom: 0.9rem;
-    }
-    .doctor-stat { text-align: center; }
-    .doctor-stat .num { font-size: 1.1rem; font-weight: 700; color: var(--dark); }
-    .doctor-stat .lbl { font-size: 0.72rem; color: var(--text-muted); }
-
-    .doctor-card-actions { display: flex; gap: 0.5rem; }
-    .doctor-card-actions button {
-        flex: 1; border: none; border-radius: 6px; padding: 0.4rem 0.5rem;
-        font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: var(--transition);
-    }
-    .doctor-card-actions button:hover { transform: translateY(-1px); filter: brightness(0.97); }
-    .btn-edit { background: var(--primary-light); color: var(--primary-dark); }
-    .btn-leave { background: var(--warning-tint-bg); color: var(--warning-tint-text); }
-    .btn-delete { background: var(--danger-tint-bg); color: var(--danger-tint-text); }
-
-    /* Booking Capacity cards stack vertically on mobile instead of trying to
-       fit 3 across a narrow screen; working-day chips get slightly bigger
-       touch targets too. */
-    @media (max-width: 560px) {
-        .shift-card-grid { grid-template-columns: 1fr; }
-        .wd-check { padding: 0.55rem 0.8rem; min-height: 44px; }
-        .doctor-card-actions button { min-height: 44px; }
-    }
+    .sub-empty-note { color: var(--text-muted); font-size: 0.88rem; }
 </style>
 </head>
 <body>
@@ -162,7 +113,7 @@
                         <div class="nav-section-body" data-section-body="management">
                             <a href="branches.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M14 9h1M14 13h1"/></svg><span class="nav-label">Branches</span></a>
                             <a href="departments.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="nav-label">Departments</span></a>
-                            <a href="doctors.html" class="active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg><span class="nav-label">Doctors</span></a>
+                            <a href="doctors.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg><span class="nav-label">Doctors</span></a>
                             <a href="patients.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20v-1a6.5 6.5 0 0 1 13 0v1"/><circle cx="17" cy="9" r="3"/><path d="M14.5 20v-1a5 5 0 0 1 8 0v1"/></svg><span class="nav-label">Patients</span></a>
                         </div>
                     </div>
@@ -174,7 +125,7 @@
                         <div class="nav-section-body" data-section-body="system">
                             <a href="staff.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="nav-label">Staff</span></a>
                             <a href="settings.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="nav-label">Settings</span></a>
-                            <a href="subscription.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg><span class="nav-label">Subscription</span></a>
+                            <a href="subscription.html" class="active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg><span class="nav-label">Subscription</span></a>
                         </div>
                     </div>
                 </nav>
@@ -186,102 +137,28 @@
             </aside>
             <main class="main-content">
                 <div class="topbar">
-                    <div>
-                        <h1>Doctors Management</h1>
-                        <div class="sub" id="doctorCountSub"></div>
+                    <h1>Subscription</h1>
+                </div>
+
+                <div class="card" style="margin-bottom:1.25rem;">
+                    <div class="sub-status-row">
+                        <span class="sub-plan-name" id="subPlanName">Loading…</span>
+                        <span class="badge sub-status-badge" id="subStatusBadge"></span>
                     </div>
-                    <button class="btn btn-primary" id="addDoctorBtn" style="width:auto;">+ Add Doctor</button>
+                    <div class="sub-info-grid" id="subInfoGrid"></div>
+                    <div class="sub-empty-note" id="subEmptyNote" style="display:none;"></div>
                 </div>
 
-                <div class="stat-grid" style="margin-bottom: 1.25rem;">
-                    <div class="stat-card">
-                        <div class="label">Total Doctors</div>
-                        <div class="value" id="statTotal">—</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="label">Available Now</div>
-                        <div class="value" id="statAvailable">—</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="label">On Leave</div>
-                        <div class="value" id="statLeave">—</div>
-                    </div>
+                <div class="card" style="margin-bottom:1.25rem;" id="subUsageCard">
+                    <h2>Current Usage &amp; Limits</h2>
+                    <div id="subUsageBody"></div>
                 </div>
 
-                <div id="leaveFilterBanner" style="display:none; margin-bottom: 1.1rem;">
-                    <span class="badge badge-confirmed" id="leaveFilterLabel"></span>
-                    <a href="doctors.html" style="margin-left: 0.6rem; font-size: 0.85rem;">Clear filter</a>
+                <div class="card" id="subModuleCard">
+                    <h2>Module Access</h2>
+                    <div class="module-grid" id="subModuleGrid"></div>
+                    <div class="sub-empty-note" id="subModuleEmptyNote" style="display:none;">No plan assigned — module access is unrestricted until a plan is assigned by your platform administrator.</div>
                 </div>
-
-                <div id="formPanel">
-                    <h2 id="formTitle">Add Doctor</h2>
-                    <form id="doctorForm">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Name</label>
-                                <input type="text" id="fName" required placeholder="e.g. Rahul Sharma">
-                            </div>
-                            <div class="form-group">
-                                <label>Department</label>
-                                <select id="fDepartment" required></select>
-                            </div>
-                            <div class="form-group">
-                                <label>Consultation Fee (₹)</label>
-                                <input type="number" id="fFee" required min="0" step="0.01">
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Qualification</label>
-                                <input type="text" id="fQualification" placeholder="e.g. MBBS, MD (Cardiology)">
-                            </div>
-                            <div class="form-group">
-                                <label>Experience (years)</label>
-                                <input type="number" id="fExperience" min="0" step="1" placeholder="e.g. 10">
-                            </div>
-                        </div>
-
-                        <label class="section-label">Working Days</label>
-                        <div class="working-days-row" id="workingDaysRow"></div>
-
-                        <label class="section-label">Booking Capacity</label>
-                        <div class="shift-card-grid" id="shiftCardGrid"></div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Appointment Duration</label>
-                                <select id="fDuration">
-                                    <option value="5">5 Minutes</option>
-                                    <option value="10">10 Minutes</option>
-                                    <option value="15" selected>15 Minutes</option>
-                                    <option value="20">20 Minutes</option>
-                                    <option value="30">30 Minutes</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Availability</label>
-                                <select id="fAvailability">
-                                    <option value="available">Available</option>
-                                    <option value="unavailable">Unavailable</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="form-actions">
-                            <button type="submit" class="btn btn-primary">Save Doctor</button>
-                            <button type="button" class="btn btn-outline" id="cancelFormBtn">Cancel</button>
-                        </div>
-                        <div class="error-text" id="formError"></div>
-                    </form>
-                </div>
-
-                <div class="doctor-toolbar">
-                    <input type="text" id="doctorSearch" placeholder="Search doctors by name...">
-                </div>
-
-                <div class="doctor-grid" id="doctorGrid"></div>
-                <div class="empty-state" id="emptyState" style="display:none;">No doctors match.</div>
             </main>
         </div>
     </div>
@@ -302,8 +179,6 @@
     <script src="js/avatar.js"></script>
     <script src="js/topbar.js"></script>
     <script src="js/toast.js"></script>
-    <script src="js/confirm.js"></script>
-    <script src="js/custom-select.js"></script>
-    <script src="js/doctors.js"></script>
+    <script src="js/subscription.js"></script>
 </body>
 </html>

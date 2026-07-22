@@ -9,7 +9,7 @@ async function listPatients(hospitalId, search) {
     const params = [hospitalId];
     let where = 'p.hospital_id = ?';
     if (search) {
-        where += ' AND (p.name LIKE ? OR p.phone_number LIKE ? OR p.uhid LIKE ?)';
+        where += ' AND (p.name ILIKE ? OR p.phone_number ILIKE ? OR p.uhid ILIKE ?)';
         params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 

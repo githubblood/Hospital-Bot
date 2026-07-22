@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const dependencyGuard = require('./dependencyGuard');
+const subscriptionService = require('./subscriptionService');
 const { isValidEmail, isValidPhone } = require('../utils/validators');
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -48,7 +49,7 @@ async function listBranches(hospitalId, { search, status, page, pageSize } = {})
     const params = [hospitalId];
     let where = 'hospital_id = ?';
     if (search) {
-        where += ' AND name LIKE ?';
+        where += ' AND name ILIKE ?';
         params.push(`%${search}%`);
     }
     if (status === 'Active') {
@@ -89,6 +90,12 @@ async function getBranch(hospitalId, branchId) {
 }
 
 async function createBranch(hospitalId, { name, address, phone, email }) {
+    // Stage 4C: plan-limit guard, checked before any other validation/write —
+    // "no plan assigned" or "plan has no cap here" both resolve to allowed,
+    // so this is a no-op for every hospital that existed before this stage.
+    const limitCheck = await subscriptionService.checkLimit(hospitalId, 'branches');
+    if (!limitCheck.allowed) return { error: limitCheck.error, message: limitCheck.message };
+
     const validationError = validateFields({ name, address, phone, email }, { partial: false });
     if (validationError) return { error: 'VALIDATION', message: validationError };
 

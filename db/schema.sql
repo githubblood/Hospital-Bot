@@ -1,149 +1,91 @@
--- Hospital WhatsApp Chatbot — schema
--- Base tables are exactly as specified in the project blueprint.
--- Two additions were required to make the flow actually work end-to-end:
---   1. hospitals.whatsapp_access_token — the blueprint had whatsapp_business_phone_id
---      (the "from" number) but no token to authenticate outbound Graph API calls.
---   2. patients table — appointments.patient_id referenced a table that was never
---      defined in the blueprint.
+-- Hospital WhatsApp Chatbot — schema (PostgreSQL / Supabase)
 --
--- NOTE for an existing live database (not a fresh install): this file uses
--- CREATE TABLE IF NOT EXISTS, so it will NOT retroactively apply later column
--- additions/type changes to a table that already exists. The multi-tenant
--- self-registration feature (hospitalRegistrationService.js) requires these
--- changes on top of an older database — run once:
---   ALTER TABLE hospitals
---     MODIFY whatsapp_business_phone_id VARCHAR(100) NULL,
---     MODIFY whatsapp_access_token VARCHAR(512) NULL,
---     ADD COLUMN city VARCHAR(100) NULL AFTER address,
---     ADD COLUMN state VARCHAR(100) NULL AFTER city,
---     ADD COLUMN country VARCHAR(100) NULL DEFAULT 'India' AFTER state,
---     ADD COLUMN pincode VARCHAR(10) NULL AFTER country,
---     ADD COLUMN logo VARCHAR(255) NULL AFTER icon,
---     ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at;
---   ALTER TABLE admin_users
---     ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at;
---   ALTER TABLE doctors
---     ADD COLUMN qualification VARCHAR(255) NULL AFTER name,
---     ADD COLUMN experience_years INT NULL DEFAULT 0 AFTER qualification;
+-- Migrated from MySQL to Postgres (Supabase) — this file is the live,
+-- current schema, not a base-plus-migration-notes history like its MySQL
+-- predecessor. Run this once against a fresh Postgres database (e.g. a new
+-- Supabase project) to bootstrap everything from scratch, in the order
+-- below (each table only references ones already created above it).
 --
--- Hospital Settings: Afternoon operating shift + emergency overrides + audit
--- log (schedule_overrides/waiting_list/schedule_audit_log are new tables
--- below, created automatically by CREATE TABLE IF NOT EXISTS — only the
--- column additions to existing tables need a manual ALTER on a live DB):
---   ALTER TABLE hospitals
---     ADD COLUMN afternoon_start TIME DEFAULT '13:00:00' AFTER morning_end,
---     ADD COLUMN afternoon_end   TIME DEFAULT '17:00:00' AFTER afternoon_start;
---   ALTER TABLE appointments
---     MODIFY status ENUM('Pending','Confirmed','Cancelled','Completed','Pending_Payment','Rescheduled','Waitlisted')
---     DEFAULT 'Confirmed';
---
--- Departments admin CRUD module (Stage 1 of the SaaS gap-closure plan):
--- extends the existing branch-scoped departments table rather than replacing
--- it — name_en/name_hi/branch_id are exactly what they were, still required
--- by the WhatsApp bot's bilingual department picker (bookingFlow.js via
--- catalogService.getDepartments). Only new, purely additive columns:
---   ALTER TABLE departments
---     ADD COLUMN description TEXT NULL AFTER name_hi,
---     ADD COLUMN display_order INT NOT NULL DEFAULT 0 AFTER description,
---     ADD COLUMN status ENUM('Active','Inactive') NOT NULL DEFAULT 'Active' AFTER display_order,
---     ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER status,
---     ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at;
---
--- Branches admin CRUD module (Stage 1, second module): extends the existing
--- branches table — hospital_id/name/is_active are exactly what they were,
--- still read directly by the WhatsApp bot (catalogService.getActiveBranches/
--- getDefaultBranch). Only new, purely additive columns:
---   ALTER TABLE branches
---     ADD COLUMN address TEXT NULL AFTER name,
---     ADD COLUMN phone VARCHAR(20) NULL AFTER address,
---     ADD COLUMN email VARCHAR(255) NULL AFTER phone,
---     ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER is_active,
---     ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at;
---
--- Reception Panel (Stage 2): patients.uhid is generated once, in the single
--- shared patientService.createPatient (bot registration and Reception's own
--- patient creation both go through it — one generation point). appointments
--- gains checkin_status (the pre-terminal front-desk sub-workflow — Waiting/
--- Checked In/In Consultation — orthogonal to the existing `status` column,
--- which stays the authoritative booking lifecycle) plus 'No Show' as a new
--- terminal `status` value (same category as the existing Completed/Cancelled,
--- extending an ENUM this file has already extended once before for
--- 'Waitlisted'). booking_source distinguishes WhatsApp/Reception/Walk-in
--- without touching how any existing row is interpreted (defaults to
--- 'WhatsApp', so every pre-existing appointment keeps its true origin).
--- appointment_status_history is a new audit-trail table, the same pattern
--- schedule_audit_log already established for a different domain — not a new
--- architecture concept for this codebase.
---   ALTER TABLE patients
---     ADD COLUMN uhid VARCHAR(20) NULL UNIQUE AFTER id;
---   ALTER TABLE appointments
---     MODIFY status ENUM('Pending','Confirmed','Cancelled','Completed','Pending_Payment','Rescheduled','Waitlisted','No Show') DEFAULT 'Confirmed',
---     ADD COLUMN checkin_status ENUM('Waiting','Checked In','In Consultation') NOT NULL DEFAULT 'Waiting' AFTER status,
---     ADD COLUMN checked_in_at TIMESTAMP NULL AFTER checkin_status,
---     ADD COLUMN checked_in_by INT NULL AFTER checked_in_at,
---     ADD COLUMN cancelled_by INT NULL AFTER cancel_reason,
---     ADD COLUMN booking_source ENUM('WhatsApp','Reception','Walk-in') NOT NULL DEFAULT 'WhatsApp' AFTER status_updated_at,
---     ADD CONSTRAINT fk_appt_checked_in_by FOREIGN KEY (checked_in_by) REFERENCES admin_users(id) ON DELETE SET NULL,
---     ADD CONSTRAINT fk_appt_cancelled_by FOREIGN KEY (cancelled_by) REFERENCES admin_users(id) ON DELETE SET NULL;
---   (appointment_status_history is a new CREATE TABLE IF NOT EXISTS, defined below.)
---
--- Stage 3.5 — Critical Security & Multi-Tenant Hardening: hospital
--- suspension (platform-admin groundwork, ahead of the Stage 4 Super Admin
--- UI), password-reset brute-force hardening, a missing hot-path index, and
--- fixing an FK that would have thrown on staff deletion.
---   ALTER TABLE hospitals
---     ADD COLUMN status ENUM('Active','Suspended') NOT NULL DEFAULT 'Active' AFTER emergency_support;
---   ALTER TABLE admin_users
---     ADD COLUMN reset_failed_attempts INT NOT NULL DEFAULT 0 AFTER reset_code_expires_at,
---     ADD COLUMN reset_locked_until TIMESTAMP NULL AFTER reset_failed_attempts;
---   ALTER TABLE appointments
---     ADD INDEX idx_appointment_date (appointment_date);
---   -- schedule_overrides.created_by / schedule_audit_log.admin_id were
---   -- ON DELETE RESTRICT, which conflicts with staffAdminService.deleteStaff's
---   -- real hard DELETE FROM admin_users — the first staff deletion for
---   -- someone who ever created an override or audit entry would throw an
---   -- unhandled FK error. Both tables already snapshot the actor's name into
---   -- a separate NOT NULL column (admin_name) for exactly this reason (the
---   -- record must still read correctly after the account is gone), so
---   -- SET NULL is the correct policy here, matching lifted_by's existing
---   -- ON DELETE SET NULL right next to created_by in the same table.
---   ALTER TABLE schedule_overrides
---     MODIFY created_by INT NULL,
---     DROP FOREIGN KEY schedule_overrides_ibfk_2, -- adjust name if it differs on your DB (SHOW CREATE TABLE schedule_overrides)
---     ADD CONSTRAINT fk_schedule_overrides_created_by FOREIGN KEY (created_by) REFERENCES admin_users(id) ON DELETE SET NULL;
---   ALTER TABLE schedule_audit_log
---     MODIFY admin_id INT NULL,
---     DROP FOREIGN KEY schedule_audit_log_ibfk_2, -- adjust name if it differs on your DB (SHOW CREATE TABLE schedule_audit_log)
---     ADD CONSTRAINT fk_schedule_audit_log_admin_id FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE SET NULL;
---   (password_reset_audit is a new CREATE TABLE IF NOT EXISTS, defined below.)
---
--- Stage 4B — Multi-Hospital SaaS Management: generalizes platform_audit_log
--- (shipped in Stage 4A earlier the same day) to log hospital-admin login
--- events alongside platform actions, and adds the audit-detail fields the
--- stage's requirements called for.
---   ALTER TABLE platform_audit_log
---     ADD COLUMN actor_type ENUM('PlatformAdmin','HospitalAdmin') NOT NULL DEFAULT 'PlatformAdmin' AFTER id,
---     ADD COLUMN hospital_admin_id INT NULL AFTER platform_admin_id,
---     ADD COLUMN ip_address VARCHAR(45) NULL,
---     ADD COLUMN user_agent VARCHAR(500) NULL,
---     ADD COLUMN session_id VARCHAR(64) NULL,
---     CHANGE platform_admin_name actor_name VARCHAR(255) NULL,
---     MODIFY platform_admin_id INT NULL,
---     MODIFY action_type ENUM('HospitalCreated','HospitalEdited','HospitalSuspended','HospitalActivated','HospitalAdminLogin','PlatformLogin') NOT NULL,
---     ADD CONSTRAINT fk_platform_audit_hospital_admin FOREIGN KEY (hospital_admin_id) REFERENCES admin_users(id) ON DELETE SET NULL;
+-- Conventions carried over from the MySQL version:
+--   - ENUMs are VARCHAR + CHECK constraints, not native Postgres enum types
+--     — avoids the ALTER TYPE ceremony Postgres enums need every time a
+--     value is added (this schema has extended several of them more than
+--     once already).
+--   - JSON-shaped columns (schedule_json, state_data, details, etc.) are
+--     TEXT, not JSONB — the app already does JSON.parse/JSON.stringify at
+--     every read/write site; JSONB would have `pg` auto-parse into an
+--     object and double-parse. A CHECK (`col::jsonb IS NOT NULL`) still
+--     validates the text is well-formed JSON without changing the type.
+--   - `updated_at` / `status_updated_at` / `last_interaction` columns that
+--     were `... ON UPDATE CURRENT_TIMESTAMP` in MySQL are maintained here by
+--     a trigger (Postgres has no inline equivalent) — see set_updated_at()
+--     and its two column-specific siblings below.
+--   - Every actor-tracking FK (created_by, admin_id, changed_by, etc.) is
+--     nullable with ON DELETE SET NULL, paired with a plain-text name
+--     snapshot column, so an audit/history row still reads correctly after
+--     the acting account is deleted — applied consistently everywhere an
+--     admin/platform-admin id is referenced.
 
--- whatsapp_business_phone_id/whatsapp_access_token are nullable (not the
--- blueprint's original NOT NULL) because a hospital now exists from the
--- moment of self-registration (see hospitalRegistrationService.js), before
--- its admin has configured WhatsApp via Settings. A hospital with a NULL
--- phone_id simply never matches an incoming webhook (resolveHospitalByPhoneNumberId
--- looks up by exact match), and outbound sendText calls fail closed (caught,
--- logged, not thrown) exactly like an expired/invalid token already does
--- elsewhere in this app — no special-casing needed anywhere else.
-CREATE TABLE IF NOT EXISTS hospitals (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION set_status_updated_at() RETURNS TRIGGER AS $$
+BEGIN
+    NEW.status_updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION set_last_interaction() RETURNS TRIGGER AS $$
+BEGIN
+    NEW.last_interaction = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Stage 4C — Subscription & Licensing. A plan is a named bundle of resource
+-- limits + module entitlements a platform admin can create/edit/archive.
+-- NULL on any max_* column means "unlimited" (the seeded Enterprise plan
+-- below) rather than a magic sentinel number — checked directly by
+-- subscriptionService.checkLimit. Created before `hospitals` since
+-- hospitals.plan_id references it.
+CREATE TABLE subscription_plans (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    max_branches INT NULL,
+    max_departments INT NULL,
+    max_doctors INT NULL,
+    max_staff INT NULL,
+    max_monthly_appointments INT NULL,
+    max_monthly_whatsapp_conversations INT NULL,
+    reports_module BOOLEAN NOT NULL DEFAULT FALSE,
+    reception_module BOOLEAN NOT NULL DEFAULT FALSE,
+    analytics_module BOOLEAN NOT NULL DEFAULT FALSE,
+    api_access BOOLEAN NOT NULL DEFAULT FALSE,
+    multi_branch_support BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Archived')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TRIGGER trg_subscription_plans_updated_at BEFORE UPDATE ON subscription_plans
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- whatsapp_business_phone_id/whatsapp_access_token are nullable because a
+-- hospital now exists from the moment of self-registration
+-- (hospitalRegistrationService.js), before its admin has configured
+-- WhatsApp via Settings. A hospital with a NULL phone_id simply never
+-- matches an incoming webhook (resolveHospitalByPhoneNumberId looks up by
+-- exact match), and outbound sendText calls fail closed (caught, logged,
+-- not thrown) exactly like an expired/invalid token already does — no
+-- special-casing needed anywhere else.
+CREATE TABLE hospitals (
+    id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    whatsapp_business_phone_id VARCHAR(100) UNIQUE NULL,
+    whatsapp_business_phone_id VARCHAR(100) NULL UNIQUE,
     whatsapp_access_token VARCHAR(512) NULL,
     multi_branch BOOLEAN DEFAULT FALSE,
     multi_dept BOOLEAN DEFAULT FALSE,
@@ -152,14 +94,29 @@ CREATE TABLE IF NOT EXISTS hospitals (
     approval_required BOOLEAN DEFAULT FALSE,
     payment_required BOOLEAN DEFAULT FALSE,
     emergency_support BOOLEAN DEFAULT TRUE,
-    -- Platform-level kill switch (Stage 3.5, ahead of the Stage 4 Super Admin
-    -- UI that will actually flip it). A Suspended hospital's staff can't log
-    -- in, Reception is locked out, the WhatsApp bot sends a suspension notice
-    -- instead of booking, and bookingService.createAppointment refuses to
-    -- create any appointment for it regardless of caller — enforced at both
-    -- the login/session boundary and the single shared booking choke point,
-    -- not just one surface.
-    status ENUM('Active', 'Suspended') NOT NULL DEFAULT 'Active',
+    -- Platform-level kill switch. A Suspended hospital's staff can't log
+    -- in, Reception is locked out, the WhatsApp bot sends a suspension
+    -- notice instead of booking, and bookingService.createAppointment
+    -- refuses to create any appointment for it regardless of caller —
+    -- enforced at both the login/session boundary and the single shared
+    -- booking choke point, not just one surface.
+    status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Suspended')),
+    -- Subscription (Stage 4C). plan_id NULL means "no plan assigned" —
+    -- subscriptionService.checkLimit treats that as unrestricted, so a
+    -- hospital never loses functionality until a platform admin explicitly
+    -- assigns a plan. subscription_status only ever holds the three
+    -- admin-settable base states ('Trial'/'Active'/'Suspended'); 'Grace
+    -- Period' and 'Expired' are derived at read time by comparing the
+    -- relevant end date against CURRENT_DATE, never stored.
+    plan_id INT NULL REFERENCES subscription_plans(id) ON DELETE SET NULL,
+    trial_start_date DATE NULL,
+    trial_end_date DATE NULL,
+    subscription_start DATE NULL,
+    subscription_end DATE NULL,
+    grace_period_end DATE NULL,
+    subscription_status VARCHAR(20) NOT NULL DEFAULT 'Trial' CHECK (subscription_status IN ('Trial', 'Active', 'Suspended')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     -- Admin-panel "Settings > Hospital Info" profile fields, and the
     -- self-registration form (hospitalRegistrationService.js).
     icon VARCHAR(10) DEFAULT '🏥',
@@ -167,7 +124,7 @@ CREATE TABLE IF NOT EXISTS hospitals (
     address TEXT NULL,
     city VARCHAR(100) NULL,
     state VARCHAR(100) NULL,
-    country VARCHAR(100) NULL DEFAULT 'India',
+    country VARCHAR(100) DEFAULT 'India',
     pincode VARCHAR(10) NULL,
     phone VARCHAR(20) NULL,
     email VARCHAR(255) NULL,
@@ -177,63 +134,84 @@ CREATE TABLE IF NOT EXISTS hospitals (
     -- drives actual token/capacity math), these are the facility's own
     -- hours — saving a change here diffs against existing appointments
     -- (operatingHoursService.previewAffectedAppointments) and can trigger
-    -- notify/reschedule/cancel/waitlist, but never constrains what a doctor
-    -- can be scheduled for; the two are intentionally independent.
+    -- notify/reschedule/cancel/waitlist, but never constrains what a
+    -- doctor can be scheduled for; the two are intentionally independent.
     morning_start TIME DEFAULT '09:00:00',
     morning_end TIME DEFAULT '13:00:00',
     afternoon_start TIME DEFAULT '13:00:00',
     afternoon_end TIME DEFAULT '17:00:00',
     evening_start TIME DEFAULT '17:00:00',
-    evening_end TIME DEFAULT '20:00:00',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
+    evening_end TIME DEFAULT '20:00:00'
+);
+CREATE INDEX idx_hospitals_plan ON hospitals(plan_id);
+CREATE TRIGGER trg_hospitals_updated_at BEFORE UPDATE ON hospitals
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE TABLE IF NOT EXISTS branches (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    hospital_id INT NOT NULL,
+-- Stage 4A — Platform Super Admin Foundation. A completely separate
+-- identity from admin_users on purpose: platform_admins has no hospital_id
+-- (a platform operator doesn't belong to any one tenant) and no role
+-- column (every row here already means the same single "Platform Super
+-- Admin" access level — there's nothing to rank). No public
+-- self-registration route exists; the first row is created once via
+-- scripts/createPlatformAdmin.js.
+CREATE TABLE platform_admins (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    -- address/phone/email back the admin panel's Branches management page
-    -- (Stage 1). Nullable at the DB level (an existing pre-migration branch
-    -- row, e.g. the seeded "Main Branch", has none of these) — "required" is
-    -- enforced at the application layer for new creates/updates going
-    -- forward, the same pattern hospitalRegistrationService already uses for
-    -- its own required fields, rather than a DB NOT NULL that would break on
-    -- migration. is_active is deliberately untouched/unrenamed — the
-    -- WhatsApp bot (catalogService.getActiveBranches/getDefaultBranch) reads
-    -- it directly; "status" (Active/Inactive) shown in the admin UI is
-    -- derived from this same column, not a second source of truth.
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TRIGGER trg_platform_admins_updated_at BEFORE UPDATE ON platform_admins
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- address/phone/email back the admin panel's Branches management page.
+-- Nullable at the DB level (a migrated pre-existing branch row may have
+-- none of these) — "required" is enforced at the application layer for
+-- new creates/updates going forward. is_active is read directly by the
+-- WhatsApp bot (catalogService.getActiveBranches/getDefaultBranch); the
+-- admin UI's "status" (Active/Inactive) label is derived from this same
+-- column, not a second source of truth.
+CREATE TABLE branches (
+    id SERIAL PRIMARY KEY,
+    hospital_id INT NOT NULL REFERENCES hospitals(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
     address TEXT NULL,
     phone VARCHAR(20) NULL,
     email VARCHAR(255) NULL,
     is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_branches_hospital ON branches(hospital_id);
+CREATE TRIGGER trg_branches_updated_at BEFORE UPDATE ON branches
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE TABLE IF NOT EXISTS departments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    branch_id INT NOT NULL,
+-- name_en/name_hi/branch_id are read directly by the WhatsApp bot's
+-- bilingual department picker (bookingFlow.js via
+-- catalogService.getDepartments). status (Active/Inactive, i.e.
+-- "archived") is deliberately NOT enforced in the bot's own department
+-- picker — that's booking logic, out of scope for the admin CRUD module
+-- that added this column.
+CREATE TABLE departments (
+    id SERIAL PRIMARY KEY,
+    branch_id INT NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
     name_en VARCHAR(255) NOT NULL,
     name_hi VARCHAR(255) NOT NULL,
-    -- description/display_order/status/updated_at back the admin panel's
-    -- Departments management page (Stage 1). status is Active/Inactive
-    -- ("archived") — deliberately NOT enforced yet in the WhatsApp bot's own
-    -- department picker (catalogService.getDepartments), since that's booking
-    -- logic and out of scope for this stage; see the admin service's own
-    -- comment for the current, known consequence of that boundary.
     description TEXT NULL,
     display_order INT NOT NULL DEFAULT 0,
-    status ENUM('Active', 'Inactive') NOT NULL DEFAULT 'Active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
+    status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_departments_branch ON departments(branch_id);
+CREATE TRIGGER trg_departments_updated_at BEFORE UPDATE ON departments
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- doctors.schedule_json shape (admin-controlled Booking Capacity, one template
--- applied on every working day — NOT per-weekday customization; a doctor
--- can't have Monday differ from Tuesday, only "works this day or doesn't"):
+-- doctors.schedule_json shape (admin-controlled Booking Capacity, one
+-- template applied on every working day — NOT per-weekday customization;
+-- a doctor can't have Monday differ from Tuesday, only "works this day or
+-- doesn't"):
 -- {
 --   "working_days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
 --   "duration_mins": 15,
@@ -245,96 +223,126 @@ CREATE TABLE IF NOT EXISTS departments (
 -- }
 -- A missing shift key means the doctor doesn't offer that shift at all.
 -- `duration_mins` (one of 5/10/15/20/30) is shared across every configured
--- shift and drives each token's expected_time directly (start + (token-1) *
--- duration_mins) — not an even split of the window by max_tokens like the
--- old per-weekday model. Validated at save time (doctorAdminService.js via
--- scheduleService.validateSchedule) so max_tokens * duration_mins can never
--- exceed a shift's own window.
-CREATE TABLE IF NOT EXISTS doctors (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    department_id INT NOT NULL,
+-- shift and drives each token's expected_time directly (start +
+-- (token-1) * duration_mins) — validated at save time
+-- (doctorAdminService.js via scheduleService.validateSchedule) so
+-- max_tokens * duration_mins can never exceed a shift's own window.
+CREATE TABLE doctors (
+    id SERIAL PRIMARY KEY,
+    department_id INT NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     -- Display-only profile fields (admin panel Doctors page) — not read by
     -- any booking/availability logic, same category as hospitals.icon etc.
     qualification VARCHAR(255) NULL,
-    experience_years INT NULL DEFAULT 0,
+    experience_years INT DEFAULT 0,
     is_on_leave BOOLEAN DEFAULT FALSE,
     consultation_fee DECIMAL(10, 2) DEFAULT 0.00,
-    schedule_json JSON NOT NULL,
-    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
+    schedule_json TEXT NOT NULL CHECK (schedule_json::jsonb IS NOT NULL)
+);
+CREATE INDEX idx_doctors_department ON doctors(department_id);
 
-CREATE TABLE IF NOT EXISTS patients (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    -- Generated once, in patientService.createPatient — the single function
-    -- both the WhatsApp bot's registration flow and Reception's patient
-    -- creation call — as 'UH' + zero-padded id, right after insert.
+-- Multi-Patient Family Booking: several family members can share one
+-- WhatsApp number under the same hospital (patientSelector.js), so
+-- idx_hospital_phone is a plain lookup index, not a uniqueness constraint.
+-- A "primary" patient for the handful of call sites that still assume one
+-- patient per phone (My Appointments, Live Queue Status, self-service
+-- cancel) is resolved deterministically as the first-ever registered row —
+-- see patientService.findPatient. uhid is generated once, in the single
+-- shared patientService.createPatient (bot registration and Reception's
+-- own patient creation both go through it).
+CREATE TABLE patients (
+    id SERIAL PRIMARY KEY,
     uhid VARCHAR(20) NULL UNIQUE,
-    hospital_id INT NOT NULL,
+    hospital_id INT NOT NULL REFERENCES hospitals(id) ON DELETE CASCADE,
     phone_number VARCHAR(20) NOT NULL,
     name VARCHAR(255) NOT NULL,
     age INT NOT NULL,
-    gender ENUM('M', 'F', 'O') NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- Multi-Patient Family Booking: several family members can share one
-    -- WhatsApp number under the same hospital (see patientSelector.js), so
-    -- this is a plain lookup index, not a uniqueness constraint. A "primary"
-    -- patient for the handful of call sites that still assume one patient
-    -- per phone (My Appointments, Live Queue Status, self-service cancel) is
-    -- resolved deterministically as the first-ever registered row — see
-    -- patientService.findPatient's comment.
-    INDEX idx_hospital_phone (hospital_id, phone_number),
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
+    gender VARCHAR(1) NOT NULL CHECK (gender IN ('M', 'F', 'O')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_hospital_phone ON patients(hospital_id, phone_number);
 
-CREATE TABLE IF NOT EXISTS user_sessions (
+-- Admin panel staff accounts (JWT login), one hospital per staff account.
+-- role is a display-only label for the sidebar's profile card AND the
+-- basis for requireRole's rank check (Receptionist=1, Hospital
+-- Administrator=2, Super Admin=3). phone_number + reset_code/
+-- reset_code_expires_at power the "Forgot Password" flow: a 6-digit OTP
+-- delivered over WhatsApp (the only messaging channel this project has).
+-- reset_failed_attempts/reset_locked_until are brute-force hardening for
+-- that OTP — counts consecutive wrong guesses since the last successful
+-- reset (not reset by requesting a fresh OTP, or lockout could be
+-- bypassed by simply calling forgot-password again).
+CREATE TABLE admin_users (
+    id SERIAL PRIMARY KEY,
+    hospital_id INT NOT NULL REFERENCES hospitals(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(30) NOT NULL DEFAULT 'Hospital Administrator' CHECK (role IN ('Hospital Administrator', 'Receptionist', 'Super Admin')),
+    phone_number VARCHAR(20) NULL,
+    reset_code VARCHAR(10) NULL,
+    reset_code_expires_at TIMESTAMP NULL,
+    reset_failed_attempts INT NOT NULL DEFAULT 0,
+    reset_locked_until TIMESTAMP NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_admin_users_hospital ON admin_users(hospital_id);
+CREATE TRIGGER trg_admin_users_updated_at BEFORE UPDATE ON admin_users
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- WhatsApp bot conversation state, one row per phone number (keyed by
+-- phone_number directly — a number can only ever be mid-conversation with
+-- one hospital at a time; see sessionManager.getOrCreateSession's handling
+-- of a number messaging a different hospital's WABA number than the one on
+-- record). preferred_language lives on its own column (not inside
+-- state_data) specifically so it survives every transitionState/
+-- resetToMainMenu call, which replace state_data wholesale.
+CREATE TABLE user_sessions (
     phone_number VARCHAR(20) PRIMARY KEY,
-    hospital_id INT NOT NULL,
+    hospital_id INT NOT NULL REFERENCES hospitals(id) ON DELETE CASCADE,
     current_state VARCHAR(50) NOT NULL DEFAULT 'STATE_MAIN_MENU',
-    state_data JSON NULL,
+    state_data TEXT NULL CHECK (state_data IS NULL OR state_data::jsonb IS NOT NULL),
     failure_count INT DEFAULT 0,
-    -- NULL until the patient picks a language; lives on its own column (not
-    -- inside state_data) specifically so it survives every transitionState/
-    -- resetToMainMenu call, which replace state_data wholesale.
-    preferred_language ENUM('en', 'hi') NULL,
-    last_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
+    last_interaction TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    preferred_language VARCHAR(2) NULL CHECK (preferred_language IS NULL OR preferred_language IN ('en', 'hi'))
+);
+CREATE INDEX idx_user_sessions_hospital ON user_sessions(hospital_id);
+CREATE TRIGGER trg_user_sessions_last_interaction BEFORE UPDATE ON user_sessions
+    FOR EACH ROW EXECUTE FUNCTION set_last_interaction();
 
-CREATE TABLE IF NOT EXISTS appointments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    doctor_id INT NOT NULL,
+CREATE TABLE appointments (
+    id SERIAL PRIMARY KEY,
+    patient_id INT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    doctor_id INT NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
     appointment_date DATE NOT NULL,
-    shift ENUM('Morning', 'Afternoon', 'Evening') NOT NULL,
+    shift VARCHAR(20) NOT NULL CHECK (shift IN ('Morning', 'Afternoon', 'Evening')),
     token_number INT NOT NULL,
     expected_time TIME NOT NULL,
-    -- 'Waitlisted': set by rescheduleService when an emergency-override/hours
-    -- change strands this appointment and no doctor in the department has a
-    -- near-term opening either — same "keep the old row as history" pattern
-    -- already used for 'Rescheduled', paired with a waiting_list row (below)
-    -- that tracks the active search separately (this row itself never gets a
-    -- new date/shift/token — it has none to give until one is found).
-    -- 'No Show' (Reception Panel, Stage 2): a Confirmed appointment the
-    -- patient never arrived for — manually marked by reception staff, not an
-    -- automatic sweep. Same terminal category as Completed/Cancelled.
-    status ENUM('Pending', 'Confirmed', 'Cancelled', 'Completed', 'Pending_Payment', 'Rescheduled', 'Waitlisted', 'No Show') DEFAULT 'Confirmed',
-    -- The pre-terminal front-desk sub-workflow, orthogonal to `status` above
-    -- (which stays 'Confirmed' throughout) — only meaningful while status is
-    -- 'Confirmed'; left at whatever it last was once status goes terminal, so
-    -- there's nothing to keep in sync after that point.
-    checkin_status ENUM('Waiting', 'Checked In', 'In Consultation') NOT NULL DEFAULT 'Waiting',
+    -- 'Waitlisted': set by rescheduleService when an emergency-override/
+    -- hours change strands this appointment and no doctor in the
+    -- department has a near-term opening either — the old row stays as
+    -- history, paired with a waiting_list row that tracks the active
+    -- search separately. 'No Show' (Reception Panel): a Confirmed
+    -- appointment the patient never arrived for — manually marked by
+    -- reception staff, not an automatic sweep.
+    status VARCHAR(30) DEFAULT 'Confirmed' CHECK (status IN ('Pending', 'Confirmed', 'Cancelled', 'Completed', 'Pending_Payment', 'Rescheduled', 'Waitlisted', 'No Show')),
+    -- The pre-terminal front-desk sub-workflow, orthogonal to `status`
+    -- above (which stays 'Confirmed' throughout) — only meaningful while
+    -- status is 'Confirmed'; left at whatever it last was once status
+    -- goes terminal.
+    checkin_status VARCHAR(20) NOT NULL DEFAULT 'Waiting' CHECK (checkin_status IN ('Waiting', 'Checked In', 'In Consultation')),
     checked_in_at TIMESTAMP NULL,
-    checked_in_by INT NULL,
-    -- WhatsApp default preserves every existing row's true origin on
-    -- migration; Reception's manual-booking vs. walk-in-registration paths
-    -- set 'Reception'/'Walk-in' respectively.
-    booking_source ENUM('WhatsApp', 'Reception', 'Walk-in') NOT NULL DEFAULT 'WhatsApp',
-    payment_status ENUM('Unpaid', 'Pending', 'Paid') DEFAULT 'Unpaid',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- Set when the live queue dashboard marks a token as seen (status -> 'Completed').
-    -- No separate is_completed boolean — status already has a 'Completed' value,
-    -- so a second flag would just be a second source of truth to drift out of sync.
+    checked_in_by INT NULL REFERENCES admin_users(id) ON DELETE SET NULL,
+    -- WhatsApp is the default so a migrated pre-Reception row keeps its
+    -- true origin; Reception's manual-booking vs. walk-in-registration
+    -- paths set 'Reception'/'Walk-in' respectively.
+    booking_source VARCHAR(20) NOT NULL DEFAULT 'WhatsApp' CHECK (booking_source IN ('WhatsApp', 'Reception', 'Walk-in')),
+    payment_status VARCHAR(20) DEFAULT 'Unpaid' CHECK (payment_status IN ('Unpaid', 'Pending', 'Paid')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Set when the live queue dashboard marks a token as seen
+    -- (status -> 'Completed'). No separate is_completed boolean — status
+    -- already has a 'Completed' value.
     completed_at TIMESTAMP NULL,
     -- Set by schedulerService's reminder worker once the pre-appointment
     -- WhatsApp nudge goes out, so the 15-minute scan never double-sends it.
@@ -342,264 +350,243 @@ CREATE TABLE IF NOT EXISTS appointments (
     reminder_sent_at TIMESTAMP NULL,
     cancelled_at TIMESTAMP NULL,
     cancel_reason VARCHAR(255) NULL,
-    -- NULL when the patient self-cancels via WhatsApp; set when Reception/
-    -- admin cancels on their behalf (see appointmentAdminService).
-    cancelled_by INT NULL,
+    -- NULL when the patient self-cancels via WhatsApp; set when
+    -- Reception/admin cancels on their behalf.
+    cancelled_by INT NULL REFERENCES admin_users(id) ON DELETE SET NULL,
     -- Reschedule creates a NEW row rather than mutating the old one, so the
-    -- original token/date/time stay in the record — this pair links the two:
-    -- the old row gets rescheduled_to, the new row gets rescheduled_from.
-    rescheduled_from INT NULL,
-    rescheduled_to INT NULL,
-    status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
-    FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE,
-    FOREIGN KEY (rescheduled_from) REFERENCES appointments(id) ON DELETE SET NULL,
-    FOREIGN KEY (rescheduled_to) REFERENCES appointments(id) ON DELETE SET NULL,
-    FOREIGN KEY (checked_in_by) REFERENCES admin_users(id) ON DELETE SET NULL,
-    FOREIGN KEY (cancelled_by) REFERENCES admin_users(id) ON DELETE SET NULL,
-    INDEX idx_doctor_date_shift (doctor_id, appointment_date, shift),
-    -- Standalone (Stage 3.5 perf review): idx_doctor_date_shift above only
-    -- helps a query that also filters by doctor_id — every hospital-wide,
-    -- date-scoped query that doesn't (dashboard stats, live queue-for-date,
-    -- every Reports & Analytics query) previously had no usable index on
-    -- appointment_date at all and fell back to scanning every row for the
-    -- hospital.
-    INDEX idx_appointment_date (appointment_date),
+    -- original token/date/time stay in the record — this pair links the
+    -- two: the old row gets rescheduled_to, the new row gets
+    -- rescheduled_from.
+    rescheduled_from INT NULL REFERENCES appointments(id) ON DELETE SET NULL,
+    rescheduled_to INT NULL REFERENCES appointments(id) ON DELETE SET NULL,
+    status_updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- Guards token allocation against concurrent double-booking of the same slot.
-    UNIQUE KEY uniq_doctor_date_shift_token (doctor_id, appointment_date, shift, token_number)
-) ENGINE=InnoDB;
+    UNIQUE (doctor_id, appointment_date, shift, token_number)
+);
+CREATE INDEX idx_appointments_patient ON appointments(patient_id);
+CREATE INDEX idx_doctor_date_shift ON appointments(doctor_id, appointment_date, shift);
+-- Standalone from idx_doctor_date_shift above — every hospital-wide,
+-- date-scoped query that doesn't also filter by doctor_id (dashboard
+-- stats, live queue-for-date, every Reports & Analytics query) needs its
+-- own usable index on appointment_date.
+CREATE INDEX idx_appointment_date ON appointments(appointment_date);
+CREATE INDEX idx_appt_resched_from ON appointments(rescheduled_from);
+CREATE INDEX idx_appt_resched_to ON appointments(rescheduled_to);
+CREATE INDEX idx_appt_checked_in_by ON appointments(checked_in_by);
+CREATE INDEX idx_appt_cancelled_by ON appointments(cancelled_by);
+CREATE TRIGGER trg_appointments_status_updated_at BEFORE UPDATE ON appointments
+    FOR EACH ROW EXECUTE FUNCTION set_status_updated_at();
 
--- Reception Panel (Stage 2) status/check-in audit trail — same pattern as
--- schedule_audit_log (a different domain's history table) already
--- established in this schema. admin_name is a snapshot (not just a FK) for
--- the same reason schedule_audit_log.admin_name is: it must still read
--- correctly if the admin account is later renamed or deleted.
-CREATE TABLE IF NOT EXISTS appointment_status_history (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    appointment_id INT NOT NULL,
+-- Reception Panel status/check-in audit trail. changed_by_name is a
+-- snapshot (not just a FK) so the record still reads correctly if the
+-- admin account is later renamed or deleted.
+CREATE TABLE appointment_status_history (
+    id SERIAL PRIMARY KEY,
+    appointment_id INT NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
     from_status VARCHAR(30) NULL,
     to_status VARCHAR(30) NOT NULL,
-    changed_by INT NULL,
+    changed_by INT NULL REFERENCES admin_users(id) ON DELETE SET NULL,
     changed_by_name VARCHAR(255) NULL,
-    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
-    FOREIGN KEY (changed_by) REFERENCES admin_users(id) ON DELETE SET NULL
-) ENGINE=InnoDB;
+    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_ash_appointment ON appointment_status_history(appointment_id);
+CREATE INDEX idx_ash_changed_by ON appointment_status_history(changed_by);
 
--- Admin panel staff accounts (JWT login), one hospital per staff account.
--- phone_number + reset_code/reset_code_expires_at power the "Forgot Password"
--- flow: a 6-digit OTP delivered over WhatsApp (the only messaging channel
--- this project has — there's no email/SMTP setup) rather than email.
-CREATE TABLE IF NOT EXISTS admin_users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    hospital_id INT NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    -- Display-only label for the sidebar's profile card (secondary text) —
-    -- there is no permission/RBAC system in this project gated on it, it
-    -- exists purely so the sidebar can say something more useful than the
-    -- hospital name repeated a second time.
-    role ENUM('Hospital Administrator', 'Receptionist', 'Super Admin') NOT NULL DEFAULT 'Hospital Administrator',
-    phone_number VARCHAR(20) NULL,
-    reset_code VARCHAR(10) NULL,
-    reset_code_expires_at TIMESTAMP NULL,
-    -- Brute-force hardening (Stage 3.5) for resetPassword's 6-digit code:
-    -- counts consecutive wrong guesses since the last successful reset (NOT
-    -- reset by requesting a fresh OTP — otherwise lockout could be bypassed
-    -- by simply calling forgot-password again), and reset_locked_until blocks
-    -- further attempts once the threshold is hit. See password_reset_audit
-    -- for the corresponding attempt log.
-    reset_failed_attempts INT NOT NULL DEFAULT 0,
-    reset_locked_until TIMESTAMP NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE
-) ENGINE=InnoDB;
-
--- Append-only log of every forgot-password/reset-password attempt (Stage
--- 3.5) — a companion to admin_users' live lockout counter above, so a
--- suspicious pattern of failures can be reviewed after the fact even once
--- reset_failed_attempts itself has been cleared by a later successful reset.
--- admin_user_id is nullable (and ON DELETE SET NULL) since a failed attempt
--- against an email that doesn't correspond to any account is still worth
--- logging (email_attempted keeps that case readable) without needing a real
--- FK target.
-CREATE TABLE IF NOT EXISTS password_reset_audit (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    admin_user_id INT NULL,
-    email_attempted VARCHAR(255) NOT NULL,
-    ip_address VARCHAR(45) NULL,
-    action ENUM('OTP_REQUESTED', 'RESET_SUCCESS', 'RESET_FAILED', 'LOCKED_OUT') NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE SET NULL
-) ENGINE=InnoDB;
-
--- Billing. No hospital_id column here (unlike the guide's original design) —
--- every other admin-panel table in this schema derives hospital scoping via
--- patient_id -> patients.hospital_id rather than storing it redundantly on
--- the child row, and bills follows that same convention for consistency.
-CREATE TABLE IF NOT EXISTS bills (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    appointment_id INT NOT NULL,
-    patient_id INT NOT NULL,
-    doctor_id INT NOT NULL,
-    consultation_fee DECIMAL(10,2) DEFAULT 0.00,
-    medicine_charges DECIMAL(10,2) DEFAULT 0.00,
-    test_charges DECIMAL(10,2) DEFAULT 0.00,
-    other_charges DECIMAL(10,2) DEFAULT 0.00,
-    discount DECIMAL(10,2) DEFAULT 0.00,
-    total_amount DECIMAL(10,2) DEFAULT 0.00,
-    payment_method ENUM('Cash', 'UPI', 'Card', 'Online') DEFAULT 'Cash',
-    payment_status ENUM('Unpaid', 'Paid', 'Partial') DEFAULT 'Unpaid',
+-- Billing. No hospital_id column here — every other admin-panel table in
+-- this schema derives hospital scoping via patient_id -> patients.hospital_id
+-- rather than storing it redundantly on the child row; bills follows that
+-- same convention.
+CREATE TABLE bills (
+    id SERIAL PRIMARY KEY,
+    appointment_id INT NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+    patient_id INT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    doctor_id INT NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    consultation_fee DECIMAL(10, 2) DEFAULT 0.00,
+    medicine_charges DECIMAL(10, 2) DEFAULT 0.00,
+    test_charges DECIMAL(10, 2) DEFAULT 0.00,
+    other_charges DECIMAL(10, 2) DEFAULT 0.00,
+    discount DECIMAL(10, 2) DEFAULT 0.00,
+    total_amount DECIMAL(10, 2) DEFAULT 0.00,
+    payment_method VARCHAR(20) DEFAULT 'Cash' CHECK (payment_method IN ('Cash', 'UPI', 'Card', 'Online')),
+    payment_status VARCHAR(20) DEFAULT 'Unpaid' CHECK (payment_status IN ('Unpaid', 'Paid', 'Partial')),
     bill_date DATE NOT NULL,
     paid_at TIMESTAMP NULL,
     notes TEXT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
-    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
-    FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- One bill per appointment/visit.
-    UNIQUE KEY uniq_appointment_bill (appointment_id)
-) ENGINE=InnoDB;
+    UNIQUE (appointment_id)
+);
+CREATE INDEX idx_bills_patient ON bills(patient_id);
+CREATE INDEX idx_bills_doctor ON bills(doctor_id);
 
--- Emergency Schedule Override (Settings > Emergency Override). A hospital-
--- wide or single-shift closure that the booking engine actually enforces
--- (scheduleOverrideService.isClosed, checked from bookingService.createAppointment,
--- capacityController.validateShiftCapacity, and bookingService's availability
--- functions) — not just an administrative note. hospital_id is stored
--- directly (no patient/appointment row to derive it from, same as
--- branches.hospital_id/admin_users.hospital_id).
-CREATE TABLE IF NOT EXISTS schedule_overrides (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    hospital_id INT NOT NULL,
-    scope ENUM('Morning', 'Afternoon', 'Evening', 'Hospital') NOT NULL,
-    reason ENUM('Doctor Emergency', 'Hospital Emergency', 'Public Holiday', 'Maintenance', 'Power Failure', 'Other') NOT NULL,
+-- Emergency Schedule Override (Settings > Emergency Override). A
+-- hospital-wide or single-shift closure the booking engine actually
+-- enforces (scheduleOverrideService.isClosed, checked from
+-- bookingService.createAppointment, capacityController.validateShiftCapacity,
+-- and bookingService's availability functions) — not just an
+-- administrative note. Open-ended by design: Maintenance/Power Failure
+-- don't have a knowable end time up front, so a closure stays Active
+-- until an admin explicitly lifts it.
+CREATE TABLE schedule_overrides (
+    id SERIAL PRIMARY KEY,
+    hospital_id INT NOT NULL REFERENCES hospitals(id) ON DELETE CASCADE,
+    scope VARCHAR(20) NOT NULL CHECK (scope IN ('Morning', 'Afternoon', 'Evening', 'Hospital')),
+    reason VARCHAR(30) NOT NULL CHECK (reason IN ('Doctor Emergency', 'Hospital Emergency', 'Public Holiday', 'Maintenance', 'Power Failure', 'Other')),
     note VARCHAR(500) NULL,
-    -- Open-ended by design: Maintenance/Power Failure don't have a knowable
-    -- end time up front, so a closure stays Active until an admin explicitly
-    -- lifts it (end_date is here for a possible future "set an end date"
-    -- UI, not read by isClosed's enforcement check unless populated).
     start_date DATE NOT NULL,
     end_date DATE NULL,
-    status ENUM('Active', 'Lifted') NOT NULL DEFAULT 'Active',
-    -- Nullable + SET NULL (Stage 3.5 fix, was NOT NULL + RESTRICT): RESTRICT
-    -- would throw an unhandled FK error the first time staffAdminService.
-    -- deleteStaff's real hard DELETE FROM admin_users hit an account that had
-    -- ever created an override. reason/note/admin_name-style snapshots
-    -- elsewhere in this schema exist precisely so a row still reads correctly
-    -- after its actor is gone — this FK now matches that same convention
-    -- (and lifted_by right below, which was already SET NULL).
-    created_by INT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    lifted_by INT NULL,
-    lifted_at TIMESTAMP NULL,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE,
-    FOREIGN KEY (created_by) REFERENCES admin_users(id) ON DELETE SET NULL,
-    FOREIGN KEY (lifted_by) REFERENCES admin_users(id) ON DELETE SET NULL,
-    INDEX idx_hospital_status_dates (hospital_id, status, start_date, end_date)
-) ENGINE=InnoDB;
+    status VARCHAR(20) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Lifted')),
+    created_by INT NULL REFERENCES admin_users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    lifted_by INT NULL REFERENCES admin_users(id) ON DELETE SET NULL,
+    lifted_at TIMESTAMP NULL
+);
+CREATE INDEX idx_hospital_status_dates ON schedule_overrides(hospital_id, status, start_date, end_date);
+CREATE INDEX idx_schedule_overrides_created_by ON schedule_overrides(created_by);
+CREATE INDEX idx_schedule_overrides_lifted_by ON schedule_overrides(lifted_by);
+
+-- Permanent record of every operating-hours change and emergency-override
+-- create/lift (Settings > Audit Log) — distinct from the derived, read-time
+-- "Recent Activity" topbar dropdown (adminActivityService.js), which has
+-- no persistence. admin_name is a snapshot for the same reason every other
+-- actor-name column in this schema is one.
+CREATE TABLE schedule_audit_log (
+    id SERIAL PRIMARY KEY,
+    hospital_id INT NOT NULL REFERENCES hospitals(id) ON DELETE CASCADE,
+    admin_id INT NULL REFERENCES admin_users(id) ON DELETE SET NULL,
+    admin_name VARCHAR(255) NOT NULL,
+    change_type VARCHAR(30) NOT NULL CHECK (change_type IN ('OperatingHours', 'EmergencyOverrideCreated', 'EmergencyOverrideLifted')),
+    previous_hours TEXT NULL CHECK (previous_hours IS NULL OR previous_hours::jsonb IS NOT NULL),
+    updated_hours TEXT NULL CHECK (updated_hours IS NULL OR updated_hours::jsonb IS NOT NULL),
+    override_id INT NULL REFERENCES schedule_overrides(id) ON DELETE SET NULL,
+    affected_appointments_count INT NOT NULL DEFAULT 0,
+    action_taken VARCHAR(30) NOT NULL CHECK (action_taken IN ('KeepExisting', 'Reschedule', 'CancelAppointments', 'ChangesCancelled', 'OverrideCreated', 'OverrideLifted')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_schedule_audit_hospital_created ON schedule_audit_log(hospital_id, created_at);
+CREATE INDEX idx_schedule_audit_admin ON schedule_audit_log(admin_id);
+CREATE INDEX idx_schedule_audit_override ON schedule_audit_log(override_id);
 
 -- Patients bumped by an hours change or emergency override who couldn't be
 -- auto-rescheduled (same doctor, then same-department any doctor — both
 -- exhausted). The bumped appointment itself is kept as history with
--- status='Waitlisted' (see appointments.status comment); this row tracks the
--- active search and, once resolved, points at the new appointment it became.
--- Hospital scoping derives via patient_id -> patients.hospital_id (no
--- redundant hospital_id column here), matching this schema's existing
--- convention — see the comment on the bills table above.
-CREATE TABLE IF NOT EXISTS waiting_list (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    patient_id INT NOT NULL,
-    doctor_id INT NOT NULL,
-    original_appointment_id INT NOT NULL,
+-- status='Waitlisted'; this row tracks the active search and, once
+-- resolved, points at the new appointment it became.
+CREATE TABLE waiting_list (
+    id SERIAL PRIMARY KEY,
+    patient_id INT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    doctor_id INT NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    original_appointment_id INT NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
     preferred_date DATE NOT NULL,
-    shift ENUM('Morning', 'Afternoon', 'Evening') NOT NULL,
-    status ENUM('Waiting', 'Booked', 'Cancelled') NOT NULL DEFAULT 'Waiting',
-    resulting_appointment_id INT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TIMESTAMP NULL,
-    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
-    FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE,
-    FOREIGN KEY (original_appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
-    FOREIGN KEY (resulting_appointment_id) REFERENCES appointments(id) ON DELETE SET NULL,
-    INDEX idx_doctor_status (doctor_id, status)
-) ENGINE=InnoDB;
+    shift VARCHAR(20) NOT NULL CHECK (shift IN ('Morning', 'Afternoon', 'Evening')),
+    status VARCHAR(20) NOT NULL DEFAULT 'Waiting' CHECK (status IN ('Waiting', 'Booked', 'Cancelled')),
+    resulting_appointment_id INT NULL REFERENCES appointments(id) ON DELETE SET NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP NULL
+);
+CREATE INDEX idx_waiting_list_patient ON waiting_list(patient_id);
+CREATE INDEX idx_waiting_list_original ON waiting_list(original_appointment_id);
+CREATE INDEX idx_waiting_list_resulting ON waiting_list(resulting_appointment_id);
+CREATE INDEX idx_doctor_status ON waiting_list(doctor_id, status);
 
--- Permanent record of every operating-hours change and emergency-override
--- create/lift (Settings > Audit Log) — distinct from the derived, read-time
--- "Recent Activity" topbar dropdown (adminActivityService.js), which has no
--- persistence and no notion of who changed what.
-CREATE TABLE IF NOT EXISTS schedule_audit_log (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    hospital_id INT NOT NULL,
-    -- Nullable + SET NULL (Stage 3.5 fix, was NOT NULL + RESTRICT) — same
-    -- reasoning as schedule_overrides.created_by above: admin_name is already
-    -- a permanent snapshot, so the FK no longer needs to block deleting the
-    -- actor's account.
-    admin_id INT NULL,
-    -- Snapshot, not just a FK — must still read correctly if admin_users.name
-    -- changes (or the account is later removed) after this entry is written.
-    admin_name VARCHAR(255) NOT NULL,
-    change_type ENUM('OperatingHours', 'EmergencyOverrideCreated', 'EmergencyOverrideLifted') NOT NULL,
-    previous_hours JSON NULL,
-    updated_hours JSON NULL,
-    override_id INT NULL,
-    affected_appointments_count INT NOT NULL DEFAULT 0,
-    action_taken ENUM('KeepExisting', 'Reschedule', 'CancelAppointments', 'ChangesCancelled', 'OverrideCreated', 'OverrideLifted') NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE,
-    FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE SET NULL,
-    FOREIGN KEY (override_id) REFERENCES schedule_overrides(id) ON DELETE SET NULL,
-    INDEX idx_hospital_created (hospital_id, created_at)
-) ENGINE=InnoDB;
+-- Orphaned from an earlier, abandoned attempt at the same feature
+-- waiting_list now implements — kept only for schema parity with existing
+-- deployments; always empty, zero code references. Safe to drop in a
+-- future cleanup pass.
+CREATE TABLE waitlist (
+    id SERIAL PRIMARY KEY,
+    patient_id INT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    doctor_id INT NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    preferred_date DATE NOT NULL,
+    shift VARCHAR(20) CHECK (shift IN ('Morning', 'Evening')),
+    status VARCHAR(20) DEFAULT 'Waiting' CHECK (status IN ('Waiting', 'Notified', 'Booked', 'Expired')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_waitlist_patient ON waitlist(patient_id);
+CREATE INDEX idx_waitlist_doctor_date ON waitlist(doctor_id, preferred_date);
 
--- Stage 4A — Platform Super Admin Foundation. A completely separate identity
--- from admin_users on purpose: platform_admins has no hospital_id (a
--- platform operator doesn't belong to any one tenant) and no role column
--- (unlike admin_users' 3-tier rank, every row here already means the same
--- single "Platform Super Admin" level of access — there's nothing to rank).
--- No public self-registration route exists for this table; the first row is
--- created once via scripts/createPlatformAdmin.js.
-CREATE TABLE IF NOT EXISTS platform_admins (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
+-- Append-only log of every forgot-password/reset-password attempt — a
+-- companion to admin_users' live lockout counter, so a suspicious pattern
+-- of failures can be reviewed after the fact even once
+-- reset_failed_attempts itself has been cleared by a later successful
+-- reset. admin_user_id is nullable since a failed attempt against an email
+-- that doesn't correspond to any account is still worth logging
+-- (email_attempted keeps that case readable).
+CREATE TABLE password_reset_audit (
+    id SERIAL PRIMARY KEY,
+    admin_user_id INT NULL REFERENCES admin_users(id) ON DELETE SET NULL,
+    email_attempted VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45) NULL,
+    action VARCHAR(20) NOT NULL CHECK (action IN ('OTP_REQUESTED', 'RESET_SUCCESS', 'RESET_FAILED', 'LOCKED_OUT')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_password_reset_admin ON password_reset_audit(admin_user_id);
 
 -- Append-only record of every platform-level action (hospital created/
--- edited/suspended/activated, plus login events — Stage 4B) — the
--- platform-side counterpart to schedule_audit_log, same
--- snapshot-name-not-just-FK reasoning (every actor FK is SET NULL).
--- actor_type/actor_name/{platform,hospital}_admin_id generalize this table
--- to log actions by EITHER identity: a platform admin acting on a hospital
--- (platform_admin_id set, hospital_admin_id null), or a hospital admin's own
--- login (hospital_admin_id set, platform_admin_id null) — exactly one of the
--- two FKs is populated per row, matching actor_type. ip_address/user_agent/
--- session_id (Stage 4B audit improvements) are captured at the point of
--- action; session_id is a random UUID minted into the JWT at login time
--- (see adminAuthController.js/platformAuthController.js) purely for
--- audit-trail correlation — this app's JWTs are otherwise still fully
--- stateless, no server-side session store was added.
-CREATE TABLE IF NOT EXISTS platform_audit_log (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    actor_type ENUM('PlatformAdmin', 'HospitalAdmin') NOT NULL DEFAULT 'PlatformAdmin',
-    platform_admin_id INT NULL,
-    hospital_admin_id INT NULL,
+-- edited/suspended/activated, plus login events) — the platform-side
+-- counterpart to schedule_audit_log, same snapshot-name-not-just-FK
+-- reasoning. actor_type/actor_name/{platform,hospital}_admin_id generalize
+-- this table to log actions by EITHER identity: a platform admin acting on
+-- a hospital (platform_admin_id set, hospital_admin_id null), or a
+-- hospital admin's own login (hospital_admin_id set, platform_admin_id
+-- null) — exactly one of the two FKs is populated per row, matching
+-- actor_type. session_id is a random UUID minted into the JWT at login
+-- time purely for audit-trail correlation — this app's JWTs are otherwise
+-- fully stateless, no server-side session store.
+CREATE TABLE platform_audit_log (
+    id SERIAL PRIMARY KEY,
+    actor_type VARCHAR(20) NOT NULL DEFAULT 'PlatformAdmin' CHECK (actor_type IN ('PlatformAdmin', 'HospitalAdmin')),
+    platform_admin_id INT NULL REFERENCES platform_admins(id) ON DELETE SET NULL,
+    hospital_admin_id INT NULL REFERENCES admin_users(id) ON DELETE SET NULL,
     actor_name VARCHAR(255) NULL,
-    action_type ENUM('HospitalCreated', 'HospitalEdited', 'HospitalSuspended', 'HospitalActivated', 'HospitalAdminLogin', 'PlatformLogin') NOT NULL,
-    hospital_id INT NULL,
+    action_type VARCHAR(30) NOT NULL CHECK (action_type IN ('HospitalCreated', 'HospitalEdited', 'HospitalSuspended', 'HospitalActivated', 'HospitalAdminLogin', 'PlatformLogin')),
+    hospital_id INT NULL REFERENCES hospitals(id) ON DELETE SET NULL,
     hospital_name VARCHAR(255) NULL,
-    details JSON NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    details TEXT NULL CHECK (details IS NULL OR details::jsonb IS NOT NULL),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(45) NULL,
+    user_agent VARCHAR(500) NULL,
+    session_id VARCHAR(64) NULL
+);
+CREATE INDEX idx_platform_audit_admin ON platform_audit_log(platform_admin_id);
+CREATE INDEX idx_platform_audit_hospital_created ON platform_audit_log(hospital_id, created_at);
+CREATE INDEX idx_platform_audit_hospital_admin ON platform_audit_log(hospital_admin_id);
+
+-- Separate from platform_audit_log rather than extending its action_type
+-- — subscription events get their own append-only log instead of an ALTER
+-- on that already-established table. Same conventions throughout:
+-- nullable actor FK + name snapshot, SET NULL everywhere, same
+-- ip/user-agent/session_id capture.
+CREATE TABLE subscription_audit_log (
+    id SERIAL PRIMARY KEY,
+    platform_admin_id INT NULL REFERENCES platform_admins(id) ON DELETE SET NULL,
+    actor_name VARCHAR(255) NULL,
+    action_type VARCHAR(30) NOT NULL CHECK (action_type IN (
+        'PlanCreated', 'PlanUpdated', 'PlanArchived', 'PlanRestored',
+        'PlanAssigned', 'PlanChanged', 'TrialExtended',
+        'SubscriptionActivated', 'SubscriptionSuspended', 'SubscriptionReactivated'
+    )),
+    hospital_id INT NULL REFERENCES hospitals(id) ON DELETE SET NULL,
+    hospital_name VARCHAR(255) NULL,
+    plan_id INT NULL REFERENCES subscription_plans(id) ON DELETE SET NULL,
+    plan_name VARCHAR(100) NULL,
+    details TEXT NULL CHECK (details IS NULL OR details::jsonb IS NOT NULL),
     ip_address VARCHAR(45) NULL,
     user_agent VARCHAR(500) NULL,
     session_id VARCHAR(64) NULL,
-    FOREIGN KEY (platform_admin_id) REFERENCES platform_admins(id) ON DELETE SET NULL,
-    FOREIGN KEY (hospital_admin_id) REFERENCES admin_users(id) ON DELETE SET NULL,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id) ON DELETE SET NULL,
-    INDEX idx_hospital_created (hospital_id, created_at)
-) ENGINE=InnoDB;
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_sub_audit_admin ON subscription_audit_log(platform_admin_id);
+CREATE INDEX idx_sub_audit_plan ON subscription_audit_log(plan_id);
+CREATE INDEX idx_sub_audit_hospital_created ON subscription_audit_log(hospital_id, created_at);
+
+-- Five starter plans (platform admin can edit/archive/create more via the
+-- Plan Management UI) — NULL limits on Enterprise mean unlimited.
+INSERT INTO subscription_plans
+    (name, max_branches, max_departments, max_doctors, max_staff, max_monthly_appointments, max_monthly_whatsapp_conversations, reports_module, reception_module, analytics_module, api_access, multi_branch_support)
+VALUES
+    ('Free', 1, 2, 2, 2, 50, 100, FALSE, TRUE, FALSE, FALSE, FALSE),
+    ('Trial', 1, 5, 5, 5, 200, 500, TRUE, TRUE, TRUE, FALSE, FALSE),
+    ('Basic', 1, 10, 10, 10, 500, 1000, TRUE, TRUE, TRUE, FALSE, FALSE),
+    ('Professional', 3, 25, 25, 25, 2000, 5000, TRUE, TRUE, TRUE, TRUE, TRUE),
+    ('Enterprise', NULL, NULL, NULL, NULL, NULL, NULL, TRUE, TRUE, TRUE, TRUE, TRUE);

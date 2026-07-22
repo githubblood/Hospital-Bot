@@ -25,7 +25,7 @@ async function getTodayQueue(hospitalId, doctorId, shift) {
                 p.name AS patient_name, p.phone_number, p.age, p.gender
          FROM appointments a
          JOIN patients p ON p.id = a.patient_id
-         WHERE a.doctor_id = ? AND a.appointment_date = CURDATE() AND a.shift = ?
+         WHERE a.doctor_id = ? AND a.appointment_date = CURRENT_DATE AND a.shift = ?
                AND a.status != 'Cancelled'
          ORDER BY a.token_number ASC`,
         [doctorId, shift]
@@ -56,10 +56,10 @@ async function getLiveStats(hospitalId, doctorId, shift) {
     const [[stats]] = await db.query(
         `SELECT
             COUNT(*) AS total,
-            SUM(status = 'Completed') AS seen,
+            COUNT(*) FILTER (WHERE status = 'Completed') AS seen,
             MIN(CASE WHEN status NOT IN ('Completed', 'Cancelled') THEN token_number END) AS current_token
          FROM appointments
-         WHERE doctor_id = ? AND appointment_date = CURDATE() AND shift = ? AND status != 'Cancelled'`,
+         WHERE doctor_id = ? AND appointment_date = CURRENT_DATE AND shift = ? AND status != 'Cancelled'`,
         [doctorId, shift]
     );
 
@@ -118,7 +118,7 @@ async function markCurrentDone(hospitalId, appointmentId, adminId) {
          JOIN patients p ON p.id = a.patient_id
          JOIN doctors doc ON doc.id = a.doctor_id
          JOIN hospitals h ON h.id = p.hospital_id
-         WHERE a.doctor_id = ? AND a.appointment_date = CURDATE() AND a.shift = ?
+         WHERE a.doctor_id = ? AND a.appointment_date = CURRENT_DATE AND a.shift = ?
                AND a.status NOT IN ('Completed', 'Cancelled')
          ORDER BY a.token_number ASC LIMIT 1`,
         [appt.doctor_id, appt.shift]

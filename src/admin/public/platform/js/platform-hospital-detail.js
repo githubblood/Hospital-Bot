@@ -94,6 +94,7 @@ function render(data) {
 
     document.getElementById('subscriptionTier').textContent = data.subscription.planTier;
     document.getElementById('subscriptionNote').textContent = data.subscription.note;
+    document.getElementById('manageSubscriptionLink').href = `subscription-detail.html?hospitalId=${hospitalId}`;
 
     const toggleBtn = document.getElementById('toggleStatusBtn');
     toggleBtn.textContent = h.status === 'Active' ? '⛔ Suspend' : '✅ Activate';

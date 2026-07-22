@@ -7,6 +7,9 @@ exports.list = async (req, res) => {
 
 exports.create = async (req, res) => {
     const result = await staffAdminService.createStaff(req.admin.hospital_id, req.body || {});
+    if (result.error === 'PLAN_LIMIT_REACHED') {
+        return res.status(403).json({ error: result.message });
+    }
     if (result.error) {
         return res.status(400).json({ error: result.error });
     }

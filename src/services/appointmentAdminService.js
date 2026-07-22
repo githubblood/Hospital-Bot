@@ -31,7 +31,7 @@ async function listAppointments(hospitalId, filters = {}) {
     if (departmentId) { where += ' AND doc.department_id = ?'; params.push(departmentId); }
     if (appointmentId) { where += ' AND a.id = ?'; params.push(appointmentId); }
     if (search) {
-        where += ' AND (p.name LIKE ? OR p.phone_number LIKE ? OR p.uhid LIKE ?)';
+        where += ' AND (p.name ILIKE ? OR p.phone_number ILIKE ? OR p.uhid ILIKE ?)';
         params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 

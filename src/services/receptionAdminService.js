@@ -18,13 +18,13 @@ async function getDashboardStats(hospitalId, date) {
     const [[stats]] = await db.query(
         `SELECT
             COUNT(*) AS total,
-            SUM(a.status = 'Confirmed' AND a.checkin_status = 'Waiting') AS waiting,
-            SUM(a.status = 'Confirmed' AND a.checkin_status = 'Checked In') AS checked_in,
-            SUM(a.status = 'Confirmed' AND a.checkin_status = 'In Consultation') AS in_consultation,
-            SUM(a.status = 'Completed') AS completed,
-            SUM(a.status = 'Cancelled') AS cancelled,
-            SUM(a.status = 'No Show') AS no_show,
-            SUM(a.booking_source = 'Walk-in') AS walk_in
+            COUNT(*) FILTER (WHERE a.status = 'Confirmed' AND a.checkin_status = 'Waiting') AS waiting,
+            COUNT(*) FILTER (WHERE a.status = 'Confirmed' AND a.checkin_status = 'Checked In') AS checked_in,
+            COUNT(*) FILTER (WHERE a.status = 'Confirmed' AND a.checkin_status = 'In Consultation') AS in_consultation,
+            COUNT(*) FILTER (WHERE a.status = 'Completed') AS completed,
+            COUNT(*) FILTER (WHERE a.status = 'Cancelled') AS cancelled,
+            COUNT(*) FILTER (WHERE a.status = 'No Show') AS no_show,
+            COUNT(*) FILTER (WHERE a.booking_source = 'Walk-in') AS walk_in
          FROM appointments a
          JOIN patients p ON p.id = a.patient_id
          WHERE p.hospital_id = ? AND a.appointment_date = ?`,
@@ -79,7 +79,12 @@ async function createReceptionAppointment(hospitalId, adminId, { patientId, newP
     const doctor = await doctorAdminService.getDoctor(hospitalId, doctorId);
     if (!doctor) return { error: 'DOCTOR_NOT_FOUND' };
 
-    const capacity = await capacityController.validateShiftCapacity(doctorId, date, shift, hospitalId);
+    // Walk-in Registration books a patient who is physically present right
+    // now — the shift's nominal token-time math is irrelevant to them, so
+    // this is the one legitimate case that bypasses the "next token's time
+    // must still be in the future" check (source === 'Walk-in' is set by
+    // adminReceptionController.createWalkIn, never by client input).
+    const capacity = await capacityController.validateShiftCapacity(doctorId, date, shift, hospitalId, { allowPastToday: source === 'Walk-in' });
     if (!capacity.available) {
         return { error: 'SLOT_UNAVAILABLE', reason: capacity.reason };
     }

@@ -11,7 +11,7 @@ const { formatDate } = require('../rule_engine/messages');
 // (PDF) is a separate concern, done by pdfReportBuilder.js.
 async function getTodayReportData(hospitalId) {
     const [[{ name: hospitalName }]] = await db.query('SELECT name FROM hospitals WHERE id = ?', [hospitalId]);
-    const [[{ today }]] = await db.query('SELECT CURDATE() AS today');
+    const [[{ today }]] = await db.query('SELECT CURRENT_DATE AS today');
     const todayStr = formatDate(today);
 
     const stats = await adminStatsService.getDashboardStats(hospitalId);

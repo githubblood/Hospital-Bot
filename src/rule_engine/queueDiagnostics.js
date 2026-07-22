@@ -19,7 +19,7 @@ async function getLiveQueueStatus(hospital, userPhone) {
         `SELECT a.doctor_id, a.appointment_date, a.shift, a.token_number, d.schedule_json
          FROM appointments a
          JOIN doctors d ON d.id = a.doctor_id
-         WHERE a.patient_id = ? AND a.appointment_date = CURDATE() AND a.status = 'Confirmed'
+         WHERE a.patient_id = ? AND a.appointment_date = CURRENT_DATE AND a.status = 'Confirmed'
          ORDER BY a.expected_time ASC
          LIMIT 1`,
         [patient.id]
@@ -38,7 +38,7 @@ async function getLiveQueueStatus(hospital, userPhone) {
     const patientsAhead = aheadRow.cnt;
 
     const [[servingRow]] = await db.query(
-        `SELECT MAX(token_number) AS maxToken FROM appointments
+        `SELECT MAX(token_number) AS "maxToken" FROM appointments
          WHERE doctor_id = ? AND appointment_date = ? AND shift = ? AND status = 'Completed'`,
         [appt.doctor_id, dateStr, appt.shift]
     );

@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const catalogService = require('./catalogService');
 const dependencyGuard = require('./dependencyGuard');
+const subscriptionService = require('./subscriptionService');
 
 const DEFAULT_PAGE_SIZE = 10;
 
@@ -37,7 +38,7 @@ async function listDepartments(hospitalId, { search, status, page, pageSize } = 
     const params = [hospitalId];
     let where = 'b.hospital_id = ?';
     if (search) {
-        where += ' AND dep.name_en LIKE ?';
+        where += ' AND dep.name_en ILIKE ?';
         params.push(`%${search}%`);
     }
     if (status) {
@@ -88,6 +89,12 @@ async function getDepartment(hospitalId, departmentId) {
 }
 
 async function createDepartment(hospitalId, { name, name_hi, description, display_order }) {
+    // Stage 4C: plan-limit guard — see branchAdminService.createBranch's
+    // comment on the same check for the "why" (allowed by default for every
+    // pre-Stage-4C hospital).
+    const limitCheck = await subscriptionService.checkLimit(hospitalId, 'departments');
+    if (!limitCheck.allowed) return { error: limitCheck.error, message: limitCheck.message };
+
     const cleanName = (name || '').trim();
     if (!cleanName) return { error: 'NAME_REQUIRED' };
 

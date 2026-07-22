@@ -10,7 +10,7 @@ exports.getDashboard = async (req, res) => {
     // silently produces an Invalid Date deep inside, not an error at this
     // call site — the exact IST/timezone bug class this project has hit
     // before. A pre-formatted string sidesteps it entirely.
-    const [[{ today }]] = await db.query("SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today");
+    const [[{ today }]] = await db.query("SELECT TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS today");
     const stats = await receptionAdminService.getDashboardStats(req.admin.hospital_id, date || today);
     res.json(stats);
 };
@@ -87,7 +87,7 @@ exports.createWalkIn = async (req, res) => {
     // silently produces an Invalid Date deep inside, not an error at this
     // call site — the exact IST/timezone bug class this project has hit
     // before. A pre-formatted string sidesteps it entirely.
-    const [[{ today }]] = await db.query("SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today");
+    const [[{ today }]] = await db.query("SELECT TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS today");
     const result = await receptionAdminService.createReceptionAppointment(req.admin.hospital_id, req.admin.id, {
         ...body, date: today, source: 'Walk-in', checkInNow: true
     });

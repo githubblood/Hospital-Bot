@@ -10,14 +10,14 @@ const { cleanDoctorName } = require('../rule_engine/messages');
 // plain bind params everywhere else (BETWEEN ? AND ?), so no query ever
 // re-derives "today" in JS.
 const PERIOD_EXPR = {
-    today: { from: 'CURDATE()', to: 'CURDATE()' },
-    yesterday: { from: 'CURDATE() - INTERVAL 1 DAY', to: 'CURDATE() - INTERVAL 1 DAY' },
-    last7: { from: 'CURDATE() - INTERVAL 6 DAY', to: 'CURDATE()' },
-    last30: { from: 'CURDATE() - INTERVAL 29 DAY', to: 'CURDATE()' },
-    thisMonth: { from: "DATE_FORMAT(CURDATE(), '%Y-%m-01')", to: 'CURDATE()' },
+    today: { from: 'CURRENT_DATE', to: 'CURRENT_DATE' },
+    yesterday: { from: "CURRENT_DATE - INTERVAL '1 day'", to: "CURRENT_DATE - INTERVAL '1 day'" },
+    last7: { from: "CURRENT_DATE - INTERVAL '6 days'", to: 'CURRENT_DATE' },
+    last30: { from: "CURRENT_DATE - INTERVAL '29 days'", to: 'CURRENT_DATE' },
+    thisMonth: { from: "DATE_TRUNC('month', CURRENT_DATE)", to: 'CURRENT_DATE' },
     lastMonth: {
-        from: "DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')",
-        to: 'LAST_DAY(CURDATE() - INTERVAL 1 MONTH)'
+        from: "DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')",
+        to: "(DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day')"
     }
 };
 
@@ -25,7 +25,7 @@ async function resolveDateRange(period, customFrom, customTo) {
     if (period === 'custom') {
         if (!customFrom || !customTo) return { error: 'DATE_RANGE_REQUIRED' };
         const [[row]] = await db.query(
-            `SELECT DATE_FORMAT(?, '%Y-%m-%d') AS from_date, DATE_FORMAT(?, '%Y-%m-%d') AS to_date`,
+            `SELECT TO_CHAR(?::date, 'YYYY-MM-DD') AS from_date, TO_CHAR(?::date, 'YYYY-MM-DD') AS to_date`,
             [customFrom, customTo]
         );
         if (!row.from_date || !row.to_date) return { error: 'INVALID_RANGE' };
@@ -35,7 +35,7 @@ async function resolveDateRange(period, customFrom, customTo) {
 
     const expr = PERIOD_EXPR[period] || PERIOD_EXPR.last30;
     const [[row]] = await db.query(
-        `SELECT DATE_FORMAT(${expr.from}, '%Y-%m-%d') AS from_date, DATE_FORMAT(${expr.to}, '%Y-%m-%d') AS to_date`
+        `SELECT TO_CHAR((${expr.from})::date, 'YYYY-MM-DD') AS from_date, TO_CHAR((${expr.to})::date, 'YYYY-MM-DD') AS to_date`
     );
     return { from: row.from_date, to: row.to_date };
 }
@@ -77,34 +77,34 @@ async function getAppointmentReport(hospitalId, filters) {
     const [[kpis]] = await db.query(
         `SELECT
             COUNT(*) AS total,
-            SUM(a.status = 'Confirmed') AS confirmed,
-            SUM(a.status IN ('Pending', 'Pending_Payment')) AS pending,
-            SUM(a.status = 'Cancelled') AS cancelled,
-            SUM(a.status = 'Completed') AS completed,
-            SUM(a.status = 'No Show') AS no_show,
-            SUM(a.status = 'Waitlisted') AS waitlisted,
-            SUM(a.status = 'Rescheduled') AS rescheduled,
-            SUM(a.booking_source = 'Walk-in') AS walk_in,
-            SUM(a.booking_source = 'WhatsApp') AS whatsapp,
-            SUM(a.booking_source = 'Reception') AS manual
+            COUNT(*) FILTER (WHERE a.status = 'Confirmed') AS confirmed,
+            COUNT(*) FILTER (WHERE a.status IN ('Pending', 'Pending_Payment')) AS pending,
+            COUNT(*) FILTER (WHERE a.status = 'Cancelled') AS cancelled,
+            COUNT(*) FILTER (WHERE a.status = 'Completed') AS completed,
+            COUNT(*) FILTER (WHERE a.status = 'No Show') AS no_show,
+            COUNT(*) FILTER (WHERE a.status = 'Waitlisted') AS waitlisted,
+            COUNT(*) FILTER (WHERE a.status = 'Rescheduled') AS rescheduled,
+            COUNT(*) FILTER (WHERE a.booking_source = 'Walk-in') AS walk_in,
+            COUNT(*) FILTER (WHERE a.booking_source = 'WhatsApp') AS whatsapp,
+            COUNT(*) FILTER (WHERE a.booking_source = 'Reception') AS manual
          ${JOIN_CHAIN} WHERE ${whereSql}`,
         params
     );
 
     const groupBy = ['day', 'week', 'month'].includes(filters.groupBy) ? filters.groupBy : 'day';
     const dateExpr = groupBy === 'day'
-        ? "DATE_FORMAT(a.appointment_date, '%Y-%m-%d')"
+        ? "TO_CHAR(a.appointment_date, 'YYYY-MM-DD')"
         : groupBy === 'week'
-            ? "DATE_FORMAT(a.appointment_date, '%x-W%v')"
-            : "DATE_FORMAT(a.appointment_date, '%Y-%m')";
+            ? `TO_CHAR(a.appointment_date, 'IYYY-"W"IW')`
+            : "TO_CHAR(a.appointment_date, 'YYYY-MM')";
 
     const [trend] = await db.query(
         `SELECT ${dateExpr} AS bucket,
                 COUNT(*) AS total,
-                SUM(a.status = 'Confirmed') AS confirmed,
-                SUM(a.status = 'Cancelled') AS cancelled,
-                SUM(a.status = 'Completed') AS completed,
-                SUM(a.status = 'No Show') AS no_show
+                COUNT(*) FILTER (WHERE a.status = 'Confirmed') AS confirmed,
+                COUNT(*) FILTER (WHERE a.status = 'Cancelled') AS cancelled,
+                COUNT(*) FILTER (WHERE a.status = 'Completed') AS completed,
+                COUNT(*) FILTER (WHERE a.status = 'No Show') AS no_show
          ${JOIN_CHAIN} WHERE ${whereSql}
          GROUP BY bucket ORDER BY bucket`,
         params
@@ -169,11 +169,11 @@ async function getDoctorPerformanceReport(hospitalId, filters) {
         `SELECT doc.id AS doctor_id, doc.name AS doctor_name, doc.schedule_json,
                 dep.name_en AS department_name, b.name AS branch_name,
                 COUNT(*) AS total,
-                SUM(a.status = 'Completed') AS completed,
-                SUM(a.status = 'Cancelled') AS cancelled,
-                SUM(a.status = 'No Show') AS no_show
+                COUNT(*) FILTER (WHERE a.status = 'Completed') AS completed,
+                COUNT(*) FILTER (WHERE a.status = 'Cancelled') AS cancelled,
+                COUNT(*) FILTER (WHERE a.status = 'No Show') AS no_show
          ${JOIN_CHAIN} WHERE ${whereSql}
-         GROUP BY doc.id ORDER BY total DESC`,
+         GROUP BY doc.id, dep.name_en, b.name ORDER BY total DESC`,
         params
     );
 
@@ -210,7 +210,7 @@ async function getDepartmentAnalytics(hospitalId, filters) {
                 COUNT(DISTINCT a.patient_id) AS patient_volume,
                 COUNT(DISTINCT doc.id) AS doctor_count
          ${JOIN_CHAIN} WHERE ${whereSql}
-         GROUP BY dep.id ORDER BY total DESC`,
+         GROUP BY dep.id, b.name ORDER BY total DESC`,
         params
     );
 
@@ -268,13 +268,13 @@ async function getReceptionAnalytics(hospitalId, filters) {
 
     const [[row]] = await db.query(
         `SELECT
-            SUM(a.booking_source = 'Walk-in') AS walk_ins,
-            SUM(a.booking_source = 'Reception') AS manual_bookings,
-            SUM(a.checked_in_at IS NOT NULL) AS check_ins,
+            COUNT(*) FILTER (WHERE a.booking_source = 'Walk-in') AS walk_ins,
+            COUNT(*) FILTER (WHERE a.booking_source = 'Reception') AS manual_bookings,
+            COUNT(*) FILTER (WHERE a.checked_in_at IS NOT NULL) AS check_ins,
             AVG(CASE WHEN a.checked_in_at IS NOT NULL
-                     THEN TIMESTAMPDIFF(MINUTE, a.created_at, a.checked_in_at) END) AS avg_wait_minutes,
+                     THEN EXTRACT(EPOCH FROM (a.checked_in_at - a.created_at)) / 60 END) AS avg_wait_minutes,
             AVG(CASE WHEN a.checked_in_at IS NOT NULL AND a.completed_at IS NOT NULL AND a.completed_at > a.checked_in_at
-                     THEN TIMESTAMPDIFF(MINUTE, a.checked_in_at, a.completed_at) END) AS avg_consultation_minutes
+                     THEN EXTRACT(EPOCH FROM (a.completed_at - a.checked_in_at)) / 60 END) AS avg_consultation_minutes
          ${JOIN_CHAIN} WHERE ${whereSql}`,
         params
     );
@@ -318,7 +318,7 @@ async function getPatientAnalytics(hospitalId, filters) {
     // Lifetime metric (not period-filtered) — "does this hospital's patient
     // base tend to come back", independent of which window is selected.
     const [[repeatRow]] = await db.query(
-        `SELECT COUNT(*) AS total_with_visit, SUM(appt_count > 1) AS repeat_count
+        `SELECT COUNT(*) AS total_with_visit, COUNT(*) FILTER (WHERE appt_count > 1) AS repeat_count
          FROM (
              SELECT a.patient_id, COUNT(*) AS appt_count
              FROM appointments a JOIN patients p ON p.id = a.patient_id

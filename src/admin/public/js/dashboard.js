@@ -137,6 +137,26 @@ window.addEventListener('resize', () => {
     chartResizeTimer = setTimeout(loadCharts, 250);
 });
 
+// Overview cards navigate to the relevant page, pre-filtered — {today} is
+// resolved from local Y/M/D components (not toISOString(), the same IST
+// off-by-one fix used everywhere else in this project) so "today" always
+// matches the date the user is actually looking at, not UTC's.
+function goToCard(card) {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const href = card.dataset.nav.replace('{today}', today);
+    window.location.href = href;
+}
+document.querySelectorAll('.overview-card[data-nav]').forEach(card => {
+    card.addEventListener('click', () => goToCard(card));
+    card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            goToCard(card);
+        }
+    });
+});
+
 // ---- Live Queue ----
 // Pushed over SSE (see queue/stream) rather than polled — the dashboard
 // updates the instant a patient is marked done or a new WhatsApp booking

@@ -26,10 +26,10 @@ async function sendDueReminders() {
          JOIN patients p ON p.id = a.patient_id
          JOIN doctors doc ON doc.id = a.doctor_id
          JOIN hospitals h ON h.id = p.hospital_id
-         WHERE a.appointment_date = CURDATE()
+         WHERE a.appointment_date = CURRENT_DATE
            AND a.status = 'Confirmed'
            AND a.reminder_sent = FALSE
-           AND TIMESTAMPDIFF(MINUTE, NOW(), TIMESTAMP(a.appointment_date, a.expected_time)) BETWEEN 0 AND ?`,
+           AND EXTRACT(EPOCH FROM ((a.appointment_date + a.expected_time) - LOCALTIMESTAMP)) / 60 BETWEEN 0 AND ?`,
         [REMINDER_WINDOW_MINUTES]
     );
 

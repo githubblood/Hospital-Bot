@@ -62,7 +62,7 @@ async function previewAffectedAppointments(hospitalId, newHours) {
              FROM appointments a
              JOIN patients p ON p.id = a.patient_id
              JOIN doctors doc ON doc.id = a.doctor_id
-             WHERE p.hospital_id = ? AND a.appointment_date >= CURDATE()
+             WHERE p.hospital_id = ? AND a.appointment_date >= CURRENT_DATE
                AND a.status IN ('Confirmed', 'Pending', 'Pending_Payment')
                AND a.shift = ? AND (a.expected_time < ? OR a.expected_time >= ?)
              ORDER BY a.appointment_date, a.expected_time`,

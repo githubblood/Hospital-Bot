@@ -56,7 +56,7 @@ async function createAppointment({ patientId, doctorId, date, shift, hospitalCon
     // guard a no-op for every input. Doing `? < CURDATE()` server-side avoids
     // that trap entirely and matches this project's established "let SQL own
     // date truth" rule (the same IST/timezone bug class hit before).
-    const [[{ isPast }]] = await db.query('SELECT (? < CURDATE()) AS isPast', [date]);
+    const [[{ isPast }]] = await db.query('SELECT (? < CURRENT_DATE) AS "isPast"', [date]);
     if (isPast) {
         throw new PastDateError('Cannot book an appointment for a past date');
     }
@@ -117,7 +117,7 @@ async function createAppointment({ patientId, doctorId, date, shift, hospitalCon
             }
 
             const [maxRows] = await conn.query(
-                `SELECT MAX(token_number) AS maxToken FROM appointments
+                `SELECT MAX(token_number) AS "maxToken" FROM appointments
                  WHERE doctor_id = ? AND appointment_date = ? AND shift = ?`,
                 [doctorId, date, shift]
             );
@@ -175,9 +175,9 @@ async function createAppointment({ patientId, doctorId, date, shift, hospitalCon
 async function getBookedCounts(doctorId, dates) {
     if (!dates || dates.length === 0) return {};
     const [rows] = await db.query(
-        `SELECT DATE_FORMAT(appointment_date, '%Y-%m-%d') AS d, shift, COUNT(*) AS cnt
+        `SELECT TO_CHAR(appointment_date, 'YYYY-MM-DD') AS d, shift, COUNT(*) AS cnt
          FROM appointments
-         WHERE doctor_id = ? AND status != 'Cancelled' AND appointment_date IN (?)
+         WHERE doctor_id = ? AND status != 'Cancelled' AND appointment_date = ANY(?::date[])
          GROUP BY d, shift`,
         [doctorId, dates]
     );
@@ -212,7 +212,11 @@ async function getAvailability(doctor, daysAhead = 7, hospitalId = null) {
             .map(shift => {
                 const win = scheduleService.getShiftWindow(doctor, date, shift);
                 const booked = counts[date]?.[shift] || 0;
-                return { shift, max: win.max_tokens, booked, remaining: Math.max(0, win.max_tokens - booked) };
+                // The next unclaimed token's own time must still be in the
+                // future for today — see scheduleService.nextTokenTimeHasPassed.
+                const remaining = scheduleService.nextTokenTimeHasPassed(win, date, booked)
+                    ? 0 : Math.max(0, win.max_tokens - booked);
+                return { shift, max: win.max_tokens, booked, remaining };
             });
         const totalRemaining = shifts.reduce((sum, s) => sum + s.remaining, 0);
         return { date, weekday, shifts, totalRemaining };
@@ -228,7 +232,9 @@ async function getShiftsWithCapacity(doctor, date, hospitalId = null) {
         .map(shift => {
             const win = scheduleService.getShiftWindow(doctor, date, shift);
             const booked = counts[date]?.[shift] || 0;
-            return { shift, max: win.max_tokens, booked, remaining: Math.max(0, win.max_tokens - booked) };
+            const remaining = scheduleService.nextTokenTimeHasPassed(win, date, booked)
+                ? 0 : Math.max(0, win.max_tokens - booked);
+            return { shift, max: win.max_tokens, booked, remaining };
         });
 }
 
@@ -253,7 +259,7 @@ async function getUpcomingAppointments(patientId) {
          FROM appointments a
          JOIN doctors d ON d.id = a.doctor_id
          JOIN departments dep ON dep.id = d.department_id
-         WHERE a.patient_id = ? AND a.appointment_date >= CURDATE() AND a.status NOT IN ('Cancelled', 'Rescheduled')
+         WHERE a.patient_id = ? AND a.appointment_date >= CURRENT_DATE AND a.status NOT IN ('Cancelled', 'Rescheduled')
          ORDER BY a.appointment_date, a.expected_time`,
         [patientId]
     );

@@ -293,14 +293,37 @@ function updateStats(doctors) {
     document.getElementById('doctorCountSub').textContent = `${total} doctor${total === 1 ? '' : 's'} in total`;
 }
 
+// Deep-link from the dashboard's "Available Doctors Today" / "Doctors On
+// Leave" cards (?leave=0 / ?leave=1) — no backend filter for this exists
+// (nor is one needed for a per-hospital doctor list this size), so it's
+// applied client-side against the already-fetched list, same as the stat
+// cards above already derive their own counts from doctorsCache.
+const leaveFilter = new URLSearchParams(window.location.search).get('leave');
+
+function applyLeaveFilter(doctors) {
+    if (leaveFilter === '1') return doctors.filter(d => d.is_on_leave);
+    if (leaveFilter === '0') return doctors.filter(d => !d.is_on_leave);
+    return doctors;
+}
+
+function renderLeaveFilterBanner() {
+    const banner = document.getElementById('leaveFilterBanner');
+    if (leaveFilter !== '0' && leaveFilter !== '1') { banner.style.display = 'none'; return; }
+    document.getElementById('leaveFilterLabel').textContent =
+        leaveFilter === '1' ? 'Showing: On Leave only' : 'Showing: Available only';
+    banner.style.display = 'block';
+}
+
 async function loadDoctors(search) {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     const res = await AdminAuth.authFetch('/api/admin/doctors?' + params.toString());
     const data = await res.json();
     doctorsCache = data.doctors;
+    renderLeaveFilterBanner();
+    const filtered = applyLeaveFilter(doctorsCache);
     updateStats(doctorsCache);
-    renderCards(doctorsCache);
+    renderCards(filtered);
 }
 
 document.getElementById('doctorGrid').addEventListener('click', async (e) => {

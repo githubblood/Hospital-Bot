@@ -16,6 +16,7 @@ const scheduleController = require('../controllers/scheduleController');
 const adminStaffController = require('../controllers/adminStaffController');
 const adminBranchesController = require('../controllers/adminBranchesController');
 const adminReceptionController = require('../controllers/adminReceptionController');
+const adminSubscriptionController = require('../controllers/adminSubscriptionController');
 const adminAuth = require('../middleware/adminAuth');
 const jwtAuth = require('../middleware/jwtAuth');
 const requireRole = require('../middleware/requireRole');
@@ -132,6 +133,12 @@ router.get('/reports/analytics/branches', jwtAuth, requireRole('Hospital Adminis
 router.get('/reports/analytics/reception', jwtAuth, requireRole('Hospital Administrator'), adminReportsController.getReceptionReport);
 router.get('/reports/analytics/patients', jwtAuth, requireRole('Hospital Administrator'), adminReportsController.getPatientReport);
 router.get('/reports/analytics/export', jwtAuth, requireRole('Hospital Administrator'), adminReportsController.exportReport);
+
+// Stage 4C — read-only, own-hospital-only (subscriptionService.
+// getHospitalSubscription is always called with req.admin.hospital_id from
+// the caller's own token, never a client-supplied id). Gated to Hospital
+// Administrator, matching Reports' own sensitivity level, above.
+router.get('/subscription', jwtAuth, requireRole('Hospital Administrator'), adminSubscriptionController.getMySubscription);
 
 router.get('/settings/hospital', jwtAuth, settingsController.getHospital);
 router.put('/settings/hospital', jwtAuth, requireRole('Hospital Administrator'), settingsController.updateHospital);

@@ -11,7 +11,12 @@ const REASON = {
     ON_LEAVE: 'ON_LEAVE',
     NOT_SCHEDULED: 'NOT_SCHEDULED',
     FULL: 'FULL',
-    OVERRIDDEN: 'OVERRIDDEN'
+    OVERRIDDEN: 'OVERRIDDEN',
+    // The next unclaimed token's own computed time has already passed today
+    // — distinct from FULL (capacity exhausted); see
+    // scheduleService.nextTokenTimeHasPassed for why this can be true even
+    // when max_tokens - booked is still positive.
+    TOO_LATE_TODAY: 'TOO_LATE_TODAY'
 };
 
 // Pure validation — no session or messaging side effects — so it's reusable
@@ -24,7 +29,15 @@ const REASON = {
 // A caller reacting to `available: false` should route the session back to
 // STATES.SELECT_DATE (re-show date/shift options) rather than treat this as
 // an unexpected error — the requested shift simply isn't bookable right now.
-async function validateShiftCapacity(doctorId, requestedDate, requestedShift, hospitalId = null) {
+// allowPastToday: set true only by callers that legitimately book "right
+// now" regardless of the shift's nominal schedule — Reception's Walk-in
+// Registration (receptionAdminService.createReceptionAppointment), where a
+// patient is physically present and checked in immediately. Every other
+// caller (WhatsApp bot booking/reschedule, Reception's own Manual
+// Appointment Booking, the automatic reschedule/waitlist engine) is
+// promising the patient a specific future time, so the default (false)
+// keeps the check enforced.
+async function validateShiftCapacity(doctorId, requestedDate, requestedShift, hospitalId = null, { allowPastToday = false } = {}) {
     const doctor = await catalogService.getDoctorById(doctorId);
     if (!doctor) {
         return { available: false, reason: REASON.NOT_FOUND, remaining: 0 };
@@ -50,6 +63,10 @@ async function validateShiftCapacity(doctorId, requestedDate, requestedShift, ho
 
     if (cnt >= shiftWindow.max_tokens) {
         return { available: false, reason: REASON.FULL, remaining: 0 };
+    }
+
+    if (!allowPastToday && scheduleService.nextTokenTimeHasPassed(shiftWindow, requestedDate, cnt)) {
+        return { available: false, reason: REASON.TOO_LATE_TODAY, remaining: 0 };
     }
 
     return { available: true, reason: null, remaining: shiftWindow.max_tokens - cnt };

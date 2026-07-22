@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const db = require('../config/db');
+const subscriptionService = require('./subscriptionService');
 const { isValidEmail } = require('../utils/validators');
 
 const ROLES = ['Hospital Administrator', 'Receptionist', 'Super Admin'];
@@ -21,7 +22,7 @@ async function listStaff(hospitalId) {
 
 async function countAdminRankStaff(hospitalId, excludeId) {
     const params = [hospitalId, ADMIN_RANK_ROLES];
-    let sql = 'SELECT COUNT(*) AS cnt FROM admin_users WHERE hospital_id = ? AND role IN (?)';
+    let sql = 'SELECT COUNT(*) AS cnt FROM admin_users WHERE hospital_id = ? AND role = ANY(?::text[])';
     if (excludeId != null) {
         sql += ' AND id != ?';
         params.push(excludeId);
@@ -31,6 +32,12 @@ async function countAdminRankStaff(hospitalId, excludeId) {
 }
 
 async function createStaff(hospitalId, { name, email, password, role, phone_number }) {
+    // Stage 4C: plan-limit guard — see branchAdminService.createBranch's
+    // comment on the same check for the "why" (allowed by default for every
+    // pre-Stage-4C hospital).
+    const limitCheck = await subscriptionService.checkLimit(hospitalId, 'staff');
+    if (!limitCheck.allowed) return { error: limitCheck.error, message: limitCheck.message };
+
     if (!name || !email || !password || !role) {
         return { error: 'name, email, password, and role are all required' };
     }

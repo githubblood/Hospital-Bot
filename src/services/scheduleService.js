@@ -50,9 +50,38 @@ function getShiftWindow(doctor, dateStr, shift) {
     return { ...shiftConfig, duration_mins: schedule.duration_mins };
 }
 
+function nowTimeStr() {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
 function isDoctorAvailable(doctor, dateStr, shift) {
     if (doctor.is_on_leave) return false;
-    return getShiftWindow(doctor, dateStr, shift) !== null;
+    const window = getShiftWindow(doctor, dateStr, shift);
+    if (!window) return false;
+    // A shift that has already fully ended today can never be relevant to
+    // self-service booking, regardless of token capacity — this is the
+    // coarse, booked-count-independent half of the fix; see
+    // nextTokenTimeHasPassed below for the precise per-token check used
+    // once booked counts are available.
+    if (dateStr === toDateOnly(new Date()) && window.end <= nowTimeStr()) return false;
+    return true;
+}
+
+// Token numbers are always assigned sequentially from the next unclaimed
+// number (see bookingService.createAppointment's MAX(token_number)+1), never
+// backfilled into an earlier gap — so the *next* token to be assigned is the
+// only one that matters for "is this shift still genuinely bookable today".
+// If its computed expected_time has already passed, the shift's remaining
+// capacity is not honestly offerable via self-service booking, even though
+// max_tokens - booked might still be positive (this was the exact bug: a
+// patient booking at 12:34 PM was offered "Morning" and confirmed for
+// token 1 / 9:00 AM — a time already three-plus hours in the past).
+// Only applies to today; a future date has no time-of-day constraint.
+function nextTokenTimeHasPassed(shiftWindow, dateStr, bookedCount) {
+    if (dateStr !== toDateOnly(new Date())) return false;
+    const nextTokenTime = computeExpectedTime(shiftWindow, bookedCount + 1);
+    return nextTokenTime <= nowTimeStr();
 }
 
 // Next `daysAhead` calendar days (including today) on which the doctor works
@@ -196,6 +225,7 @@ module.exports = {
     getAvailableDates,
     getAvailableShifts,
     computeExpectedTime,
+    nextTokenTimeHasPassed,
     timeDiffMinutes,
     formatWeeklyTimings,
     validateSchedule

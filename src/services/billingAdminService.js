@@ -10,12 +10,12 @@ async function getStats(hospitalId) {
     const [[todayRow]] = await db.query(
         `SELECT COALESCE(SUM(b.total_amount), 0) AS collection, COUNT(*) AS total
          FROM bills b JOIN patients p ON p.id = b.patient_id
-         WHERE p.hospital_id = ? AND b.bill_date = CURDATE() AND b.payment_status = 'Paid'`,
+         WHERE p.hospital_id = ? AND b.bill_date = CURRENT_DATE AND b.payment_status = 'Paid'`,
         [hospitalId]
     );
     const [[totalTodayRow]] = await db.query(
         `SELECT COUNT(*) AS cnt FROM bills b JOIN patients p ON p.id = b.patient_id
-         WHERE p.hospital_id = ? AND b.bill_date = CURDATE()`,
+         WHERE p.hospital_id = ? AND b.bill_date = CURRENT_DATE`,
         [hospitalId]
     );
     const [[unpaidRow]] = await db.query(
@@ -26,7 +26,7 @@ async function getStats(hospitalId) {
     const [[monthRow]] = await db.query(
         `SELECT COALESCE(SUM(b.total_amount), 0) AS collection FROM bills b JOIN patients p ON p.id = b.patient_id
          WHERE p.hospital_id = ? AND b.payment_status = 'Paid'
-               AND b.bill_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')`,
+               AND b.bill_date >= DATE_TRUNC('month', CURRENT_DATE)`,
         [hospitalId]
     );
 
@@ -44,7 +44,7 @@ async function listBills(hospitalId, { date, status, search } = {}) {
     if (date) { where += ' AND b.bill_date = ?'; params.push(date); }
     if (status) { where += ' AND b.payment_status = ?'; params.push(status); }
     if (search) {
-        where += ' AND (p.name LIKE ? OR p.phone_number LIKE ?)';
+        where += ' AND (p.name ILIKE ? OR p.phone_number ILIKE ?)';
         params.push(`%${search}%`, `%${search}%`);
     }
 
@@ -116,7 +116,7 @@ async function createBill(hospitalId, body) {
             `INSERT INTO bills
              (appointment_id, patient_id, doctor_id, consultation_fee, medicine_charges, test_charges, other_charges,
               discount, total_amount, payment_method, payment_status, bill_date, paid_at, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, ?)`,
             [
                 appointment_id, appt.patient_id, appt.doctor_id,
                 consultation_fee || 0, medicine_charges || 0, test_charges || 0, other_charges || 0, discount || 0,

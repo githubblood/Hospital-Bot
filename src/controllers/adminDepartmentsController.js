@@ -40,6 +40,9 @@ exports.create = async (req, res) => {
     if (result.error === 'DUPLICATE_NAME') {
         return res.status(409).json({ error: 'A department with this name already exists' });
     }
+    if (result.error === 'PLAN_LIMIT_REACHED') {
+        return res.status(403).json({ error: result.message });
+    }
     res.status(201).json({ success: true, id: result.id });
 };
 

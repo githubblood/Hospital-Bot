@@ -57,8 +57,10 @@
         background: var(--card-bg); border-radius: 10px; padding: 1rem;
         box-shadow: var(--shadow); transition: var(--transition); border-top: 3px solid var(--border);
         display: flex; flex-direction: column; justify-content: space-between; min-height: 80px;
+        cursor: pointer;
     }
     .overview-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
+    .overview-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     .overview-card .label { font-size: 0.76rem; color: var(--text-muted); margin-bottom: 0.3rem; }
     .overview-card .value { font-size: 1.5rem; font-weight: 700; color: var(--dark); }
     .overview-card.c-total { border-top-color: var(--primary); }
@@ -197,6 +199,7 @@
                         <div class="nav-section-body" data-section-body="system">
                             <a href="staff.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="nav-label">Staff</span></a>
                             <a href="settings.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="nav-label">Settings</span></a>
+                            <a href="subscription.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg><span class="nav-label">Subscription</span></a>
                         </div>
                     </div>
                 </nav>
@@ -212,42 +215,42 @@
                 </div>
 
                 <div class="overview-grid">
-                    <div class="overview-card c-total">
+                    <div class="overview-card c-total" role="button" tabindex="0" data-nav="appointments.html?date={today}" aria-label="Today's Total Appointments — view all">
                         <div class="overview-icon">📅</div>
                         <div class="label">Today's Total Appointments</div>
                         <div class="value" id="ovTotal">—</div>
                     </div>
-                    <div class="overview-card c-confirmed">
+                    <div class="overview-card c-confirmed" role="button" tabindex="0" data-nav="appointments.html?date={today}&status=Confirmed" aria-label="Confirmed appointments — view filtered">
                         <div class="overview-icon">✅</div>
                         <div class="label">Confirmed</div>
                         <div class="value" id="ovConfirmed">—</div>
                     </div>
-                    <div class="overview-card c-cancelled">
+                    <div class="overview-card c-cancelled" role="button" tabindex="0" data-nav="appointments.html?date={today}&status=Cancelled" aria-label="Cancelled appointments — view filtered">
                         <div class="overview-icon">❌</div>
                         <div class="label">Cancelled</div>
                         <div class="value" id="ovCancelled">—</div>
                     </div>
-                    <div class="overview-card c-completed">
+                    <div class="overview-card c-completed" role="button" tabindex="0" data-nav="appointments.html?date={today}&status=Completed" aria-label="Completed appointments — view filtered">
                         <div class="overview-icon">🏁</div>
                         <div class="label">Completed</div>
                         <div class="value" id="ovCompleted">—</div>
                     </div>
-                    <div class="overview-card c-waiting">
+                    <div class="overview-card c-waiting" role="button" tabindex="0" data-nav="queue-management.html" aria-label="Waiting patients — view live queue">
                         <div class="overview-icon">⏳</div>
                         <div class="label">Waiting Patients</div>
                         <div class="value" id="ovWaiting">—</div>
                     </div>
-                    <div class="overview-card c-available">
+                    <div class="overview-card c-available" role="button" tabindex="0" data-nav="doctors.html?leave=0" aria-label="Available doctors today — view filtered">
                         <div class="overview-icon">🩺</div>
                         <div class="label">Available Doctors Today</div>
                         <div class="value" id="ovAvailable">—</div>
                     </div>
-                    <div class="overview-card c-leave">
+                    <div class="overview-card c-leave" role="button" tabindex="0" data-nav="doctors.html?leave=1" aria-label="Doctors on leave — view filtered">
                         <div class="overview-icon">🛌</div>
                         <div class="label">Doctors On Leave</div>
                         <div class="value" id="ovOnLeave">—</div>
                     </div>
-                    <div class="overview-card c-patients">
+                    <div class="overview-card c-patients" role="button" tabindex="0" data-nav="patients.html" aria-label="Total patients — view all">
                         <div class="overview-icon">👥</div>
                         <div class="label">Total Patients</div>
                         <div class="value" id="ovPatients">—</div>

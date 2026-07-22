@@ -32,7 +32,7 @@ async function findAffectedAppointments(hospitalId, scope) {
          FROM appointments a
          JOIN patients p ON p.id = a.patient_id
          JOIN doctors doc ON doc.id = a.doctor_id
-         WHERE p.hospital_id = ? AND a.appointment_date >= CURDATE()
+         WHERE p.hospital_id = ? AND a.appointment_date >= CURRENT_DATE
            AND a.status IN ('Confirmed', 'Pending', 'Pending_Payment')
            AND (? = 'Hospital' OR a.shift = ?)
          ORDER BY a.appointment_date, a.expected_time`,
@@ -53,7 +53,7 @@ async function createOverride(hospitalId, admin, { scope, reason, note }) {
 
     const [result] = await db.query(
         `INSERT INTO schedule_overrides (hospital_id, scope, reason, note, start_date, created_by)
-         VALUES (?, ?, ?, ?, CURDATE(), ?)`,
+         VALUES (?, ?, ?, ?, CURRENT_DATE, ?)`,
         [hospitalId, scope, reason, note || null, admin.id]
     );
 

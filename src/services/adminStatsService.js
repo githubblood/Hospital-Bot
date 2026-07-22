@@ -8,7 +8,7 @@ async function getDashboardStats(hospitalId) {
     const [[todayRow]] = await db.query(
         `SELECT COUNT(*) AS cnt FROM appointments a
          JOIN patients p ON p.id = a.patient_id
-         WHERE p.hospital_id = ? AND a.appointment_date = CURDATE() AND a.status != 'Cancelled'`,
+         WHERE p.hospital_id = ? AND a.appointment_date = CURRENT_DATE AND a.status != 'Cancelled'`,
         [hospitalId]
     );
     const [[pendingRow]] = await db.query(
@@ -65,13 +65,13 @@ async function getTodayOverview(hospitalId) {
     const [[byStatus]] = await db.query(
         `SELECT
             COUNT(*) AS total,
-            SUM(a.status = 'Confirmed') AS confirmed,
-            SUM(a.status = 'Cancelled') AS cancelled,
-            SUM(a.status = 'Completed') AS completed,
-            SUM(a.status IN ('Confirmed', 'Pending', 'Pending_Payment')) AS waiting
+            COUNT(*) FILTER (WHERE a.status = 'Confirmed') AS confirmed,
+            COUNT(*) FILTER (WHERE a.status = 'Cancelled') AS cancelled,
+            COUNT(*) FILTER (WHERE a.status = 'Completed') AS completed,
+            COUNT(*) FILTER (WHERE a.status IN ('Confirmed', 'Pending', 'Pending_Payment')) AS waiting
          FROM appointments a
          JOIN patients p ON p.id = a.patient_id
-         WHERE p.hospital_id = ? AND a.appointment_date = CURDATE()`,
+         WHERE p.hospital_id = ? AND a.appointment_date = CURRENT_DATE`,
         [hospitalId]
     );
 
@@ -109,9 +109,9 @@ async function getTodayOverview(hospitalId) {
 // delivery-receipt data to compute a real success rate from.
 async function getChartsData(hospitalId) {
     const [perDay] = await db.query(
-        `SELECT DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS d, COUNT(*) AS cnt
+        `SELECT TO_CHAR(a.appointment_date, 'YYYY-MM-DD') AS d, COUNT(*) AS cnt
          FROM appointments a JOIN patients p ON p.id = a.patient_id
-         WHERE p.hospital_id = ? AND a.appointment_date BETWEEN DATE_SUB(CURDATE(), INTERVAL 13 DAY) AND CURDATE()
+         WHERE p.hospital_id = ? AND a.appointment_date BETWEEN CURRENT_DATE - INTERVAL '13 days' AND CURRENT_DATE
          GROUP BY d ORDER BY d`,
         [hospitalId]
     );
@@ -138,10 +138,10 @@ async function getChartsData(hospitalId) {
     );
 
     const [cancellationTrend] = await db.query(
-        `SELECT DATE_FORMAT(a.appointment_date, '%Y-%m-%d') AS d,
-                SUM(a.status = 'Cancelled') AS cancelled, COUNT(*) AS total
+        `SELECT TO_CHAR(a.appointment_date, 'YYYY-MM-DD') AS d,
+                COUNT(*) FILTER (WHERE a.status = 'Cancelled') AS cancelled, COUNT(*) AS total
          FROM appointments a JOIN patients p ON p.id = a.patient_id
-         WHERE p.hospital_id = ? AND a.appointment_date BETWEEN DATE_SUB(CURDATE(), INTERVAL 13 DAY) AND CURDATE()
+         WHERE p.hospital_id = ? AND a.appointment_date BETWEEN CURRENT_DATE - INTERVAL '13 days' AND CURRENT_DATE
          GROUP BY d ORDER BY d`,
         [hospitalId]
     );
@@ -149,7 +149,7 @@ async function getChartsData(hospitalId) {
     // "Booking hour" = when the booking was made (created_at), not the
     // appointment's own time slot — i.e. when patients tend to use the bot.
     const [peakHours] = await db.query(
-        `SELECT HOUR(a.created_at) AS hr, COUNT(*) AS cnt
+        `SELECT EXTRACT(HOUR FROM a.created_at)::int AS hr, COUNT(*) AS cnt
          FROM appointments a JOIN patients p ON p.id = a.patient_id
          WHERE p.hospital_id = ?
          GROUP BY hr ORDER BY hr`,
@@ -159,15 +159,15 @@ async function getChartsData(hospitalId) {
     const [queueByShift] = await db.query(
         `SELECT a.shift, COUNT(*) AS cnt
          FROM appointments a JOIN patients p ON p.id = a.patient_id
-         WHERE p.hospital_id = ? AND a.appointment_date = CURDATE() AND a.status != 'Cancelled'
+         WHERE p.hospital_id = ? AND a.appointment_date = CURRENT_DATE AND a.status != 'Cancelled'
          GROUP BY a.shift`,
         [hospitalId]
     );
 
     const [monthlyGrowth] = await db.query(
-        `SELECT DATE_FORMAT(a.appointment_date, '%Y-%m') AS ym, COUNT(*) AS cnt
+        `SELECT TO_CHAR(a.appointment_date, 'YYYY-MM') AS ym, COUNT(*) AS cnt
          FROM appointments a JOIN patients p ON p.id = a.patient_id
-         WHERE p.hospital_id = ? AND a.appointment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+         WHERE p.hospital_id = ? AND a.appointment_date >= CURRENT_DATE - INTERVAL '6 months'
          GROUP BY ym ORDER BY ym`,
         [hospitalId]
     );

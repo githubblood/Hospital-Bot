@@ -37,6 +37,9 @@ exports.create = async (req, res) => {
     if (result.error === 'DEPARTMENT_NOT_FOUND') {
         return res.status(400).json({ error: 'That department does not belong to your hospital' });
     }
+    if (result.error === 'PLAN_LIMIT_REACHED') {
+        return res.status(403).json({ error: result.message });
+    }
     res.status(201).json({ success: true, id: result.id });
 };
 

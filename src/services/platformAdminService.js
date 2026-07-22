@@ -84,9 +84,9 @@ function computeHealth(counts) {
 async function getPlatformDashboardStats() {
     const [[hospitalStats]] = await db.query(
         `SELECT COUNT(*) AS total,
-                SUM(status = 'Active') AS active,
-                SUM(status = 'Suspended') AS suspended,
-                SUM(whatsapp_business_phone_id IS NOT NULL) AS whatsapp_connected
+                COUNT(*) FILTER (WHERE status = 'Active') AS active,
+                COUNT(*) FILTER (WHERE status = 'Suspended') AS suspended,
+                COUNT(*) FILTER (WHERE whatsapp_business_phone_id IS NOT NULL) AS whatsapp_connected
          FROM hospitals`
     );
     const [[doctorStats]] = await db.query('SELECT COUNT(*) AS total FROM doctors');
@@ -94,8 +94,8 @@ async function getPlatformDashboardStats() {
     const [[patientStats]] = await db.query('SELECT COUNT(*) AS total FROM patients');
     const [[appointmentStats]] = await db.query(
         `SELECT COUNT(*) AS total,
-                SUM(appointment_date = CURDATE()) AS today,
-                SUM(appointment_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND CURDATE()) AS this_month
+                COUNT(*) FILTER (WHERE appointment_date = CURRENT_DATE) AS today,
+                COUNT(*) FILTER (WHERE appointment_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE) AS this_month
          FROM appointments`
     );
     const [[needsWhatsApp]] = await db.query(
@@ -147,7 +147,7 @@ async function listHospitals({ search, status, page, pageSize } = {}) {
     let where = '1=1';
     if (search) {
         const like = `%${search}%`;
-        where += ' AND (h.name LIKE ? OR h.email LIKE ? OR h.city LIKE ?)';
+        where += ' AND (h.name ILIKE ? OR h.email ILIKE ? OR h.city ILIKE ?)';
         params.push(like, like, like);
     }
     if (status && HOSPITAL_STATUSES.includes(status)) {
@@ -173,7 +173,7 @@ async function listHospitals({ search, status, page, pageSize } = {}) {
                 (SELECT COUNT(*) FROM admin_users au WHERE au.hospital_id = h.id) AS staff_count,
                 (SELECT COUNT(*) FROM departments dep JOIN branches b2 ON b2.id = dep.branch_id WHERE b2.hospital_id = h.id) AS department_count,
                 (SELECT COUNT(*) FROM doctors doc JOIN departments dep2 ON dep2.id = doc.department_id JOIN branches b3 ON b3.id = dep2.branch_id WHERE b3.hospital_id = h.id) AS doctor_count,
-                (SELECT COUNT(*) FROM appointments a JOIN patients p ON p.id = a.patient_id WHERE p.hospital_id = h.id AND a.appointment_date >= CURDATE() - INTERVAL 30 DAY) AS recent_appointment_count
+                (SELECT COUNT(*) FROM appointments a JOIN patients p ON p.id = a.patient_id WHERE p.hospital_id = h.id AND a.appointment_date >= CURRENT_DATE - INTERVAL '30 days') AS recent_appointment_count
          FROM hospitals h WHERE ${where}
          ORDER BY h.created_at DESC LIMIT ? OFFSET ?`,
         [...params, size, offset]
@@ -222,11 +222,11 @@ async function getHospitalDetail(hospitalId) {
     );
     const [[appt]] = await db.query(
         `SELECT COUNT(*) AS total,
-                SUM(a.appointment_date = CURDATE()) AS today,
-                SUM(a.appointment_date BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND CURDATE()) AS this_month,
-                SUM(a.status = 'Confirmed') AS confirmed, SUM(a.status = 'Completed') AS completed,
-                SUM(a.status = 'Cancelled') AS cancelled,
-                SUM(a.appointment_date >= CURDATE() - INTERVAL 30 DAY) AS recent30
+                COUNT(*) FILTER (WHERE a.appointment_date = CURRENT_DATE) AS today,
+                COUNT(*) FILTER (WHERE a.appointment_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE) AS this_month,
+                COUNT(*) FILTER (WHERE a.status = 'Confirmed') AS confirmed, COUNT(*) FILTER (WHERE a.status = 'Completed') AS completed,
+                COUNT(*) FILTER (WHERE a.status = 'Cancelled') AS cancelled,
+                COUNT(*) FILTER (WHERE a.appointment_date >= CURRENT_DATE - INTERVAL '30 days') AS recent30
          FROM appointments a JOIN patients p ON p.id = a.patient_id WHERE p.hospital_id = ?`,
         [hospitalId]
     );
@@ -436,7 +436,7 @@ async function globalSearch(query) {
     const [[hospitals], [doctors], [patients], [staff]] = await Promise.all([
         db.query(
             `SELECT id, name, city, status FROM hospitals
-             WHERE name LIKE ? OR email LIKE ? OR city LIKE ? LIMIT ${SEARCH_LIMIT}`,
+             WHERE name ILIKE ? OR email ILIKE ? OR city ILIKE ? LIMIT ${SEARCH_LIMIT}`,
             [like, like, like]
         ),
         db.query(
@@ -446,19 +446,19 @@ async function globalSearch(query) {
              JOIN departments dep ON dep.id = doc.department_id
              JOIN branches b ON b.id = dep.branch_id
              JOIN hospitals h ON h.id = b.hospital_id
-             WHERE doc.name LIKE ? LIMIT ${SEARCH_LIMIT}`,
+             WHERE doc.name ILIKE ? LIMIT ${SEARCH_LIMIT}`,
             [like]
         ),
         db.query(
             `SELECT p.id, p.name, p.phone_number, p.uhid, h.id AS hospital_id, h.name AS hospital_name
              FROM patients p JOIN hospitals h ON h.id = p.hospital_id
-             WHERE p.name LIKE ? OR p.phone_number LIKE ? OR p.uhid LIKE ? LIMIT ${SEARCH_LIMIT}`,
+             WHERE p.name ILIKE ? OR p.phone_number ILIKE ? OR p.uhid ILIKE ? LIMIT ${SEARCH_LIMIT}`,
             [like, like, like]
         ),
         db.query(
             `SELECT au.id, au.name, au.email, au.role, h.id AS hospital_id, h.name AS hospital_name
              FROM admin_users au JOIN hospitals h ON h.id = au.hospital_id
-             WHERE au.name LIKE ? OR au.email LIKE ? LIMIT ${SEARCH_LIMIT}`,
+             WHERE au.name ILIKE ? OR au.email ILIKE ? LIMIT ${SEARCH_LIMIT}`,
             [like, like]
         )
     ]);
@@ -485,7 +485,7 @@ async function getPlatformSettings() {
     const packageJson = require('../../package.json');
     const [[dbVersion]] = await db.query('SELECT VERSION() AS v');
     const [[storage]] = await db.query(
-        `SELECT SUM(data_length + index_length) AS bytes FROM information_schema.TABLES WHERE table_schema = DATABASE()`
+        `SELECT pg_database_size(current_database()) AS bytes`
     );
     const [[hospitalCount]] = await db.query('SELECT COUNT(*) AS cnt FROM hospitals');
     const [[userCount]] = await db.query('SELECT COUNT(*) AS cnt FROM admin_users');

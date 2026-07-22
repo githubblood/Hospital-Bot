@@ -4,26 +4,27 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>(function(){try{document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'light');}catch(e){}})();</script>
-<title>Activity Feed — Platform Admin</title>
+<title>Hospital Subscriptions — Platform Admin</title>
 <link rel="icon" type="image/svg+xml" href="../favicon.svg">
 <link rel="stylesheet" href="../css/style.css">
 <style>
     .filters { display: flex; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
-    .filters input, .filters select {
+    .filters select, .filters input {
         padding: 0.5rem 0.65rem; border: 1px solid var(--border); border-radius: 6px;
         font-size: 0.85rem; background: var(--card-bg); color: var(--text-primary);
     }
-    .action-type-badge {
-        display: inline-block; padding: 0.2rem 0.55rem; border-radius: 20px;
-        font-size: 0.75rem; font-weight: 600; color: #fff; white-space: nowrap;
+    .filters input[type="text"] { flex: 1; min-width: 200px; }
+    .action-btn {
+        border: none; border-radius: 5px; padding: 0.3rem 0.65rem; font-size: 0.78rem;
+        font-weight: 600; color: #fff; cursor: pointer; margin-right: 0.35rem; transition: var(--transition);
     }
-    .action-HospitalCreated { background: var(--primary); }
-    .action-HospitalEdited { background: var(--text-muted); }
-    .action-HospitalSuspended { background: var(--danger); }
-    .action-HospitalActivated { background: var(--success); }
-    .action-HospitalAdminLogin { background: var(--primary-dark); }
-    .action-PlatformLogin { background: var(--primary-dark); }
-    .details-cell { font-size: 0.78rem; color: var(--text-muted); max-width: 320px; }
+    .action-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); }
+    .action-view { background: var(--primary); }
+    .status-trial, .status-grace-period { background: var(--warning); color: #4d3b06; }
+    .status-active { background: var(--success); }
+    .status-expired, .status-suspended { background: var(--danger); }
+    .status-no-plan-assigned { background: var(--text-muted); }
+    .actions-cell { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 
     .pagination { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; }
     .pagination .info { font-size: 0.82rem; color: var(--text-muted); }
@@ -34,6 +35,19 @@
     }
     .pagination button:hover:not(:disabled) { background: var(--primary-light); border-color: var(--primary); }
     .pagination button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .loading-state, .error-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); font-size: 0.9rem; }
+    .loading-state .spinner {
+        display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border);
+        border-top-color: var(--primary); border-radius: 50%; animation: plat-spin 0.7s linear infinite; margin-bottom: 0.6rem;
+    }
+    @keyframes plat-spin { to { transform: rotate(360deg); } }
+    .error-state { color: var(--danger-tint-text); }
+
+    @media (max-width: 480px) {
+        .filters select, .filters input { flex: 1 1 100%; }
+        .action-btn { min-height: 36px; }
+    }
 </style>
 </head>
 <body>
@@ -65,8 +79,8 @@
                     <a href="dashboard.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard</a>
                     <a href="hospitals.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M14 9h1M14 13h1"/></svg>Hospitals</a>
                     <a href="plans.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>Plans</a>
-                    <a href="subscriptions.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Subscriptions</a>
-                    <a href="audit-log.html" class="active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>Activity Feed</a>
+                    <a href="subscriptions.html" class="active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Subscriptions</a>
+                    <a href="audit-log.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>Activity Feed</a>
                     <a href="settings.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</a>
                 </nav>
                 <div class="sidebar-user" id="sidebarUser">
@@ -82,34 +96,41 @@
             </aside>
             <main class="main-content">
                 <div class="topbar">
-                    <h1>Platform Activity Feed</h1>
+                    <h1>Hospital Subscriptions</h1>
                 </div>
 
                 <div class="filters">
-                    <input type="text" id="hospitalIdFilter" placeholder="Filter by hospital ID (optional)" inputmode="numeric">
-                    <select id="actionTypeFilter">
-                        <option value="">All actions</option>
-                        <option value="HospitalCreated">Hospital Created</option>
-                        <option value="HospitalEdited">Hospital Edited</option>
-                        <option value="HospitalSuspended">Hospital Suspended</option>
-                        <option value="HospitalActivated">Hospital Activated</option>
-                        <option value="HospitalAdminLogin">Hospital Login</option>
-                        <option value="PlatformLogin">Platform Login</option>
+                    <input type="text" id="searchInput" placeholder="Search by hospital name…">
+                    <select id="statusFilter">
+                        <option value="">All statuses</option>
+                        <option value="No Plan Assigned">No Plan Assigned</option>
+                        <option value="Trial">Trial</option>
+                        <option value="Active">Active</option>
+                        <option value="Grace Period">Grace Period</option>
+                        <option value="Expired">Expired</option>
+                        <option value="Suspended">Suspended</option>
                     </select>
-                    <button class="btn btn-outline" id="applyFilterBtn" type="button" style="width:auto;">Apply</button>
                 </div>
 
                 <div class="card">
-                    <table>
-                        <thead><tr><th>Action</th><th>Hospital</th><th>By</th><th>Details</th><th>IP Address</th><th>When</th></tr></thead>
-                        <tbody id="tableBody"></tbody>
-                    </table>
-                    <div class="empty-state" id="emptyState" style="display:none;">No activity recorded yet.</div>
-                    <div class="pagination" id="pagination">
-                        <div class="info" id="paginationInfo"></div>
-                        <div class="controls">
-                            <button type="button" id="prevPageBtn">&larr; Previous</button>
-                            <button type="button" id="nextPageBtn">Next &rarr;</button>
+                    <div id="loadingState" class="loading-state"><div class="spinner"></div><div>Loading subscriptions…</div></div>
+                    <div id="errorState" class="error-state" style="display:none;"></div>
+                    <div id="tableWrap" style="display:none;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Hospital</th><th>Plan</th><th>Status</th><th>Trial Ends</th><th>Subscription Ends</th><th>Grace Period Ends</th><th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                        <div class="empty-state" id="emptyState" style="display:none;">No hospitals match these filters.</div>
+                        <div class="pagination" id="pagination">
+                            <div class="info" id="paginationInfo"></div>
+                            <div class="controls">
+                                <button type="button" id="prevPageBtn">&larr; Previous</button>
+                                <button type="button" id="nextPageBtn">Next &rarr;</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -120,8 +141,9 @@
     <script src="../js/escapeHtml.js"></script>
     <script src="../js/theme.js"></script>
     <script src="../js/toast.js"></script>
+    <script src="../js/confirm.js"></script>
     <script src="js/platform-auth.js"></script>
     <script src="js/platform-search.js"></script>
-    <script src="js/platform-audit-log.js"></script>
+    <script src="js/platform-subscriptions.js"></script>
 </body>
 </html>
