@@ -34,7 +34,7 @@ platformLoginForm.addEventListener('submit', async (e) => {
     loginSubmitBtn.innerHTML = '<span class="btn-spinner"></span>Logging in…';
 
     try {
-        const res = await fetch('/api/platform/login', {
+        const res = await fetch(API_BASE_URL + '/api/platform/login', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
         });

@@ -14,6 +14,29 @@ const platformRoutes = require('./routes/platformRoutes');
 
 const app = express();
 
+// CORS: only matters once the admin panel is deployed to a different origin
+// than this API (e.g. Vercel + Railway) — same-origin requests (the default,
+// Railway serving both) never hit the browser's CORS check at all. Empty/
+// unset ALLOWED_ORIGIN means this adds no headers, so today's same-origin
+// deployment is byte-for-byte unchanged. Auth here is a Bearer token (and a
+// token query param for the SSE queue stream), never cookies, so no
+// Access-Control-Allow-Credentials is needed.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+function corsMiddleware(req, res, next) {
+    const origin = req.headers.origin;
+    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+    }
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+}
+
 app.use(helmet({
     // This app serves plain HTML/JS/CSS with inline <script> theme-flash
     // guards and inline event-handler-free markup, but a strict default CSP
@@ -31,11 +54,11 @@ app.use(express.json({
 }));
 
 app.use('/', webhookRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/admin', corsMiddleware, adminRoutes);
 // Mounted separately from /api/admin (Stage 4A) — a distinct route
 // namespace, not a sub-path, so a platform token and a hospital token are
 // never even routed through the same middleware chain.
-app.use('/api/platform', platformRoutes);
+app.use('/api/platform', corsMiddleware, platformRoutes);
 app.use('/admin', express.static(path.join(__dirname, 'admin/public')));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

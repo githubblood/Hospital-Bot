@@ -26,13 +26,13 @@ const PlatformAuth = {
     },
     async logout() {
         try {
-            await fetch('/api/platform/logout', { method: 'POST', headers: { Authorization: `Bearer ${this.getToken()}` } });
+            await fetch(API_BASE_URL + '/api/platform/logout', { method: 'POST', headers: { Authorization: `Bearer ${this.getToken()}` } });
         } catch (e) { /* best-effort; clear local session regardless */ }
         this.clearSession();
         window.location.href = 'login.html';
     },
     async authFetch(url, options = {}) {
-        const res = await fetch(url, {
+        const res = await fetch(API_BASE_URL + url, {
             ...options,
             headers: { ...(options.headers || {}), Authorization: `Bearer ${this.getToken()}` }
         });

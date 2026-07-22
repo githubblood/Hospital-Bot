@@ -56,7 +56,7 @@ function startDisplay() {
     }
 
     if (rsEventSource) rsEventSource.close();
-    const url = `/api/admin/queue/stream?doctor_id=${doctorId}&shift=${shift}&token=${encodeURIComponent(AdminAuth.getToken())}`;
+    const url = `${API_BASE_URL}/api/admin/queue/stream?doctor_id=${doctorId}&shift=${shift}&token=${encodeURIComponent(AdminAuth.getToken())}`;
     rsEventSource = new EventSource(url);
     rsEventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);

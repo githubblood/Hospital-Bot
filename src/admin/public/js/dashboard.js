@@ -261,7 +261,7 @@ function loadQueue() {
 
     if (queueEventSource) queueEventSource.close();
 
-    const url = `/api/admin/queue/stream?doctor_id=${queueDoctorId}&shift=${queueShift}&token=${encodeURIComponent(AdminAuth.getToken())}`;
+    const url = `${API_BASE_URL}/api/admin/queue/stream?doctor_id=${queueDoctorId}&shift=${queueShift}&token=${encodeURIComponent(AdminAuth.getToken())}`;
     queueEventSource = new EventSource(url);
 
     queueEventSource.onopen = () => {

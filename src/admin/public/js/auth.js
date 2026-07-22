@@ -34,7 +34,7 @@ const AdminAuth = {
     },
     async logout() {
         try {
-            await fetch('/api/admin/logout', {
+            await fetch(API_BASE_URL + '/api/admin/logout', {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${this.getToken()}` }
             });
@@ -45,7 +45,7 @@ const AdminAuth = {
     // fetch() wrapper that attaches the bearer token and redirects to login
     // on a 401 (expired/invalid token) instead of every page re-deriving that.
     async authFetch(url, options = {}) {
-        const res = await fetch(url, {
+        const res = await fetch(API_BASE_URL + url, {
             ...options,
             headers: { ...(options.headers || {}), Authorization: `Bearer ${this.getToken()}` }
         });
@@ -101,7 +101,7 @@ if (forgotLink && forgotModal) {
         if (!email) { errorText.textContent = 'Please enter your email.'; return; }
 
         try {
-            const res = await fetch('/api/admin/forgot-password', {
+            const res = await fetch(API_BASE_URL + '/api/admin/forgot-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email })
@@ -133,7 +133,7 @@ if (forgotLink && forgotModal) {
         if (newPassword.length < 6) { errorText.textContent = 'Password must be at least 6 characters.'; return; }
 
         try {
-            const res = await fetch('/api/admin/reset-password', {
+            const res = await fetch(API_BASE_URL + '/api/admin/reset-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: resetEmail, code, newPassword })
@@ -177,7 +177,7 @@ if (loginForm) {
         }
 
         try {
-            const res = await fetch('/api/admin/login', {
+            const res = await fetch(API_BASE_URL + '/api/admin/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })

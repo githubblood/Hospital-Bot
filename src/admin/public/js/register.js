@@ -104,7 +104,7 @@ form.addEventListener('submit', async (e) => {
 
     setLoading(true);
     try {
-        const res = await fetch('/api/admin/register-hospital', { method: 'POST', body: fd });
+        const res = await fetch(API_BASE_URL + '/api/admin/register-hospital', { method: 'POST', body: fd });
         const data = await res.json();
 
         if (!res.ok) {
