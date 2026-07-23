@@ -407,48 +407,75 @@ function openOverrideForm(scope) {
     });
 }
 
-document.querySelectorAll('[data-close-scope]').forEach(btn => {
-    btn.addEventListener('click', () => openOverrideForm(btn.dataset.closeScope));
-});
+const OVERRIDE_SCOPES = ['Morning', 'Afternoon', 'Evening', 'Hospital'];
+const scopeLabel = (s) => s === 'Hospital' ? 'Entire Hospital' : `${s} Shift`;
 
 async function loadActiveOverrides() {
     const res = await AdminAuth.authFetch('/api/admin/schedule-overrides');
     const data = await res.json();
-    const tbody = document.getElementById('overridesTableBody');
-    const emptyState = document.getElementById('overridesEmptyState');
-    tbody.innerHTML = '';
+    const byScope = {};
+    data.overrides.forEach(o => { byScope[o.scope] = o; });
+    const hospitalOverride = byScope['Hospital'];
 
-    if (data.overrides.length === 0) {
-        emptyState.style.display = 'block';
-        return;
-    }
-    emptyState.style.display = 'none';
+    const grid = document.getElementById('overrideScopeGrid');
+    grid.innerHTML = OVERRIDE_SCOPES.map(scope => {
+        const active = byScope[scope];
+        // A shift is "covered" when Hospital-wide is closed but this
+        // particular shift isn't independently closed itself — its own
+        // toggle is disabled since Hospital already blocks it regardless.
+        const coveredByHospital = scope !== 'Hospital' && hospitalOverride && !active;
 
-    data.overrides.forEach(o => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${o.scope === 'Hospital' ? 'Entire Hospital' : o.scope}</td>
-            <td>${escapeHtml(o.reason)}</td>
-            <td>${escapeHtml(o.note || '—')}</td>
-            <td>${o.start_date}</td>
-            <td>${escapeHtml(o.created_by_name)}</td>
-            <td><button class="action-btn action-cancel" data-lift="${o.id}">Lift</button></td>
-        `;
-        tbody.appendChild(tr);
-    });
+        if (active) {
+            return `
+                <div class="override-scope-card">
+                    <div class="name">${scopeLabel(scope)}</div>
+                    <span class="badge badge-cancelled">Closed</span>
+                    <div class="meta">
+                        <div><b>Reason:</b> ${escapeHtml(active.reason)}${active.note ? ` — ${escapeHtml(active.note)}` : ''}</div>
+                        <div><b>Since:</b> ${active.start_date}</div>
+                        <div><b>Closed By:</b> ${escapeHtml(active.created_by_name)}</div>
+                    </div>
+                    <button type="button" class="btn btn-outline" data-open-scope="${scope}" data-override-id="${active.id}">Open ${scopeLabel(scope)}</button>
+                </div>`;
+        }
+        if (coveredByHospital) {
+            return `
+                <div class="override-scope-card is-covered">
+                    <div class="name">${scopeLabel(scope)}</div>
+                    <span class="badge badge-pending">Closed (Hospital-wide)</span>
+                    <div class="meta">Covered by the hospital-wide closure — reopen the whole hospital to restore this shift's own toggle.</div>
+                    <button type="button" class="btn btn-outline" disabled>Open ${scopeLabel(scope)}</button>
+                </div>`;
+        }
+        return `
+            <div class="override-scope-card">
+                <div class="name">${scopeLabel(scope)}</div>
+                <span class="badge badge-confirmed">Open</span>
+                <button type="button" class="btn ${scope === 'Hospital' ? 'btn-danger' : 'btn-outline'}" data-close-scope="${scope}">Close ${scopeLabel(scope)}</button>
+            </div>`;
+    }).join('');
 }
 
-document.getElementById('overridesTableBody').addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-lift]');
-    if (!btn) return;
-    const ok = await Confirm.show('Lift this override? Bookings for this shift/hospital will reopen immediately.', {
-        title: 'Lift Override', confirmText: 'Lift'
+document.getElementById('overrideScopeGrid').addEventListener('click', async (e) => {
+    const closeBtn = e.target.closest('[data-close-scope]');
+    if (closeBtn) { openOverrideForm(closeBtn.dataset.closeScope); return; }
+
+    const openBtn = e.target.closest('[data-open-scope]');
+    if (!openBtn) return;
+    const scope = openBtn.dataset.openScope;
+    const ok = await Confirm.show(`Reopen ${scopeLabel(scope)}? Bookings will resume immediately, and any patients still waiting for a slot because of this closure will be notified.`, {
+        title: `Open ${scopeLabel(scope)}`, confirmText: 'Open'
     });
     if (!ok) return;
-    const res = await AdminAuth.authFetch(`/api/admin/schedule-overrides/${btn.dataset.lift}/lift`, { method: 'PATCH' });
+    openBtn.disabled = true;
+    const res = await AdminAuth.authFetch(`/api/admin/schedule-overrides/${openBtn.dataset.overrideId}/lift`, { method: 'PATCH' });
     const data = await res.json();
-    if (!res.ok) { Toast.show(data.error || 'Could not lift override', 'error'); return; }
-    Toast.show(`Override lifted.${data.waitlistCleared ? ` ${data.waitlistCleared} waitlisted patient(s) rebooked.` : ''}`, 'success');
+    if (!res.ok) { Toast.show(data.error || 'Could not reopen', 'error'); openBtn.disabled = false; return; }
+    const admin = AdminAuth.getAdmin();
+    Toast.show(
+        `${scopeLabel(scope)} reopened by ${admin ? admin.name : 'you'}.${data.waitlistCleared ? ` ${data.waitlistCleared} waitlisted patient(s) rebooked.` : ''}`,
+        'success'
+    );
     loadActiveOverrides();
     loadWaitingList();
 });
@@ -490,7 +517,12 @@ function auditDetails(entry) {
         );
         return parts.length ? `Changed: ${parts.join(', ')}` : 'No shift times changed';
     }
-    return entry.change_type === 'EmergencyOverrideCreated' ? 'Override created' : 'Override lifted';
+    const scope = entry.override_scope ? (entry.override_scope === 'Hospital' ? 'Entire Hospital' : `${entry.override_scope} Shift`) : null;
+    const verb = entry.change_type === 'EmergencyOverrideCreated' ? 'Closed' : 'Reopened';
+    if (!scope) return entry.change_type === 'EmergencyOverrideCreated' ? 'Override created' : 'Override lifted';
+    // Plain text only — the caller (loadAuditLog) already wraps this whole
+    // return value in escapeHtml() before inserting it.
+    return `${verb}: ${scope}${entry.override_reason ? ` — ${entry.override_reason}` : ''}`;
 }
 
 async function loadAuditLog() {

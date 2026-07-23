@@ -1,6 +1,10 @@
 const db = require('../config/db');
 const rescheduleService = require('./rescheduleService');
 const bookingService = require('./bookingService');
+const whatsappService = require('./whatsappService');
+const { bi } = require('../webhook/messages');
+const langContext = require('../webhook/helpers/langContext');
+const { getPreferredLanguage } = require('../webhook/helpers/sessionManager');
 
 // Re-runs the tier-1/tier-2 search (same doctor, then same department) for
 // every still-waiting row — called synchronously right after an admin lifts
@@ -59,6 +63,42 @@ async function retryWaitingList(hospitalId) {
     return outcomes.filter(Boolean).length;
 }
 
+// Sent once, right after scheduleController.liftOverride's retryWaitingList
+// call above — only to patients THIS override stranded (caused_by_override_id
+// match) who are STILL 'Waiting' after that retry just tried and failed to
+// rebook them (anyone it DID rebook already got a specific "you're now
+// booked for X" message from commitReschedule's own notifyRescheduled — a
+// second generic message here would be redundant, so this deliberately
+// excludes them by only querying rows still 'Waiting'). Never a hospital-wide
+// broadcast: an unrelated patient waiting on a *different*, still-active
+// override is correctly left alone.
+async function notifyStillWaitingForOverride(hospitalId, overrideId) {
+    const [rows] = await db.query(
+        `SELECT p.phone_number
+         FROM waiting_list w
+         JOIN patients p ON p.id = w.patient_id
+         WHERE p.hospital_id = ? AND w.caused_by_override_id = ? AND w.status = 'Waiting'`,
+        [hospitalId, overrideId]
+    );
+    if (rows.length === 0) return 0;
+
+    const [[hospital]] = await db.query('SELECT name, whatsapp_business_phone_id, whatsapp_access_token FROM hospitals WHERE id = ?', [hospitalId]);
+    const hospitalCreds = { whatsapp_business_phone_id: hospital.whatsapp_business_phone_id, whatsapp_access_token: hospital.whatsapp_access_token };
+
+    await Promise.all(rows.map(async (row) => {
+        const lang = await getPreferredLanguage(row.phone_number);
+        await langContext.run(lang, () => whatsappService.sendText(
+            hospitalCreds,
+            row.phone_number,
+            bi(
+                `🏥 ${hospital.name}\n\nGood news! The hospital has resumed normal operations. Online appointment booking is now available again.\n\nYour appointment was affected during the emergency — you may now book again, or contact reception. Thank you.`,
+                `🏥 ${hospital.name}\n\nखुशखबरी! अस्पताल में सामान्य कामकाज दोबारा शुरू हो गया है। ऑनलाइन अपॉइंटमेंट बुकिंग अब फिर से उपलब्ध है।\n\nआपकी अपॉइंटमेंट इमरजेंसी के दौरान प्रभावित हुई थी — अब आप दोबारा बुक कर सकते हैं, या रिसेप्शन से संपर्क करें। धन्यवाद।`
+            )
+        ));
+    }));
+    return rows.length;
+}
+
 async function listWaitingList(hospitalId, status = 'Waiting') {
     const [rows] = await db.query(
         `SELECT w.*, p.name AS patient_name, p.phone_number, doc.name AS doctor_name, dep.name_en AS department_name
@@ -73,4 +113,4 @@ async function listWaitingList(hospitalId, status = 'Waiting') {
     return rows;
 }
 
-module.exports = { retryWaitingList, listWaitingList };
+module.exports = { retryWaitingList, notifyStillWaitingForOverride, listWaitingList };

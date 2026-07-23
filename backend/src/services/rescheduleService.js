@@ -7,6 +7,8 @@ const appointmentStateMachine = require('./appointmentStateMachine');
 const capacityController = require('../webhook/capacityController');
 const doctorAdminService = require('./doctorAdminService');
 const { bi, cleanDoctorName, formatDateDisplay, formatTime } = require('../webhook/messages');
+const langContext = require('../webhook/helpers/langContext');
+const { getPreferredLanguage } = require('../webhook/helpers/sessionManager');
 
 // Only these statuses may ever become 'Rescheduled' — see
 // appointmentStateMachine's transition map. Checked up front, before a new
@@ -73,18 +75,20 @@ async function notifyRescheduled(appt, target, created, hospitalCreds, reasonNot
         ? `${reasonNote} के कारण, डॉ. ${dnOld} के साथ आपकी अपॉइंटमेंट संभव नहीं रही — आपको डॉ. ${dnNew} के पास ${when} पर शिफ्ट कर दिया गया है।`
         : `${reasonNote} के कारण, डॉ. ${dnOld} के साथ आपकी अपॉइंटमेंट ${when} पर कर दी गई है।`;
 
-    await whatsappService.sendText(hospitalCreds, appt.phone_number, bi(en, hi));
+    const lang = await getPreferredLanguage(appt.phone_number);
+    await langContext.run(lang, () => whatsappService.sendText(hospitalCreds, appt.phone_number, bi(en, hi)));
 }
 
 async function notifyWaitlisted(appt, hospitalCreds, reasonNote) {
-    await whatsappService.sendText(
+    const lang = await getPreferredLanguage(appt.phone_number);
+    await langContext.run(lang, () => whatsappService.sendText(
         hospitalCreds,
         appt.phone_number,
         bi(
             `Due to ${reasonNote}, your appointment could not be automatically rescheduled. You've been placed on our waiting list and will be notified as soon as a slot opens.`,
             `${reasonNote} के कारण, आपकी अपॉइंटमेंट अपने आप दोबारा शेड्यूल नहीं हो सकी। आपको हमारी वेटिंग लिस्ट में डाल दिया गया है और स्लॉट खुलते ही सूचित किया जाएगा।`
         )
-    );
+    ));
 }
 
 // Commits a found target: creates the replacement appointment, links it to
@@ -114,7 +118,7 @@ async function commitReschedule(appt, target, hospitalId, reasonNote, adminId = 
     return { outcome: 'Rescheduled', tier: target.tier, newAppointmentId: created.id, date: target.date, shift: target.shift };
 }
 
-async function waitlist(appt, hospitalId, reasonNote, adminId = null) {
+async function waitlist(appt, hospitalId, reasonNote, adminId = null, overrideId = null) {
     const transition = await appointmentStateMachine.transitionStatus(appt.id, 'Waitlisted', { adminId });
     // Callers only ever pass an appointment already confirmed to be
     // Confirmed (both scheduleController.createOverride and
@@ -124,10 +128,13 @@ async function waitlist(appt, hospitalId, reasonNote, adminId = null) {
     // a WhatsApp "you're waitlisted" message can never be created for an
     // appointment whose own status didn't actually change.
     if (transition.error) return { outcome: 'Error', error: transition.error };
+    // overrideId is only ever non-null when this came from
+    // scheduleController.createOverride — operatingHoursService's unrelated
+    // call site leaves it null, same as before this column existed.
     await db.query(
-        `INSERT INTO waiting_list (patient_id, doctor_id, original_appointment_id, preferred_date, shift)
-         VALUES (?, ?, ?, ?, ?)`,
-        [appt.patient_id, appt.doctor_id, appt.id, appt.appointment_date, appt.shift]
+        `INSERT INTO waiting_list (patient_id, doctor_id, original_appointment_id, preferred_date, shift, caused_by_override_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [appt.patient_id, appt.doctor_id, appt.id, appt.appointment_date, appt.shift, overrideId]
     );
     const hospital = await loadHospital(hospitalId);
     const hospitalCreds = { whatsapp_business_phone_id: hospital.whatsapp_business_phone_id, whatsapp_access_token: hospital.whatsapp_access_token };
@@ -140,10 +147,10 @@ async function waitlist(appt, hospitalId, reasonNote, adminId = null) {
 // previewAffectedAppointments / scheduleOverrideService's
 // findAffectedAppointments rows already carry, so callers can pass those
 // rows straight through with no extra lookup.
-async function autoRescheduleAppointment(appt, hospitalId, reasonNote, adminId = null) {
+async function autoRescheduleAppointment(appt, hospitalId, reasonNote, adminId = null, overrideId = null) {
     const target = await findRescheduleTarget(appt, hospitalId);
     if (!target) {
-        return waitlist(appt, hospitalId, reasonNote, adminId);
+        return waitlist(appt, hospitalId, reasonNote, adminId, overrideId);
     }
     try {
         return await commitReschedule(appt, target, hospitalId, reasonNote, adminId);
@@ -156,7 +163,7 @@ async function autoRescheduleAppointment(appt, hospitalId, reasonNote, adminId =
         // in a loop over every affected appointment — see
         // scheduleController.createOverride / operatingHoursService.saveOperatingHours).
         if (err instanceof bookingService.SlotFullError) {
-            return waitlist(appt, hospitalId, reasonNote, adminId);
+            return waitlist(appt, hospitalId, reasonNote, adminId, overrideId);
         }
         throw err;
     }
@@ -237,14 +244,15 @@ async function manualReschedule(hospitalId, appointmentId, { doctorId, date, shi
     const [[newDoctor]] = await db.query('SELECT name FROM doctors WHERE id = ?', [doctorId]);
     const hospitalCreds = { whatsapp_business_phone_id: hospital.whatsapp_business_phone_id, whatsapp_access_token: hospital.whatsapp_access_token };
     const dn = cleanDoctorName(newDoctor ? newDoctor.name : appt.doctor_name);
-    await whatsappService.sendText(
+    const manualRescheduleLang = await getPreferredLanguage(appt.phone_number);
+    await langContext.run(manualRescheduleLang, () => whatsappService.sendText(
         hospitalCreds,
         appt.phone_number,
         bi(
             `Your appointment has been rescheduled by the hospital. New appointment with Dr. ${dn} on ${formatDateDisplay(date)} (${shift}), Token #${created.tokenNumber}, ${formatTime(created.expectedTime)}.`,
             `अस्पताल द्वारा आपकी अपॉइंटमेंट दोबारा शेड्यूल कर दी गई है। नई अपॉइंटमेंट डॉ. ${dn} के साथ ${formatDateDisplay(date)} (${shift}) को, टोकन #${created.tokenNumber}, ${formatTime(created.expectedTime)} पर है।`
         )
-    );
+    ));
 
     // `success: true` added alongside the pre-existing `rescheduled: true`
     // (kept for whatever already reads it) — this was the one appointment

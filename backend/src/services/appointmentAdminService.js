@@ -2,6 +2,8 @@ const db = require('../config/db');
 const whatsappService = require('./whatsappService');
 const appointmentStateMachine = require('./appointmentStateMachine');
 const { bi, cleanDoctorName, formatDate, formatDateDisplay, formatTime } = require('../webhook/messages');
+const langContext = require('../webhook/helpers/langContext');
+const { getPreferredLanguage } = require('../webhook/helpers/sessionManager');
 
 // Safety cap (Stage 3.5 perf review) — this had no LIMIT at all before, so a
 // hospital's full appointment history (or a filterless search) returned in
@@ -98,14 +100,15 @@ async function approveAppointment(appointmentId, hospitalId, adminId) {
 
     await appointmentStateMachine.transitionStatus(appointmentId, 'Confirmed', { adminId });
     const dn = cleanDoctorName(appt.doctor_name);
-    await whatsappService.sendText(
+    const approveLang = await getPreferredLanguage(appt.phone_number);
+    await langContext.run(approveLang, () => whatsappService.sendText(
         hospitalCreds(appt),
         appt.phone_number,
         bi(
             `✅ Good news! Your appointment with Dr. ${dn} on ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) has been approved and confirmed. Token #${appt.token_number}, expected time ${formatTime(appt.expected_time)}.`,
             `✅ खुशखबरी! डॉ. ${dn} के साथ ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) की आपकी अपॉइंटमेंट मंज़ूर होकर कन्फर्म हो गई है। टोकन #${appt.token_number}, अनुमानित समय ${formatTime(appt.expected_time)}।`
         )
-    );
+    ));
     return { appointmentId: Number(appointmentId), status: 'Confirmed' };
 }
 
@@ -123,14 +126,15 @@ async function confirmPayment(appointmentId, hospitalId, adminId) {
         adminId, extraFields: { payment_status: 'Paid' }
     });
     const dn = cleanDoctorName(appt.doctor_name);
-    await whatsappService.sendText(
+    const paymentLang = await getPreferredLanguage(appt.phone_number);
+    await langContext.run(paymentLang, () => whatsappService.sendText(
         hospitalCreds(appt),
         appt.phone_number,
         bi(
             `✅ Payment received. Your appointment on ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) is confirmed. Token #${appt.token_number}, expected time ${formatTime(appt.expected_time)}.`,
             `✅ भुगतान प्राप्त हुआ। ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) की आपकी अपॉइंटमेंट कन्फर्म है। टोकन #${appt.token_number}, अनुमानित समय ${formatTime(appt.expected_time)}।`
         )
-    );
+    ));
     return { appointmentId: Number(appointmentId), status: 'Confirmed', payment_status: 'Paid' };
 }
 
@@ -149,14 +153,15 @@ async function rejectAppointment(appointmentId, hospitalId, reason, adminId) {
         adminId, extraFields: { cancelled_at: new Date(), cancel_reason: reason, cancelled_by: adminId || null }
     });
     const dn = cleanDoctorName(appt.doctor_name);
-    await whatsappService.sendText(
+    const rejectLang = await getPreferredLanguage(appt.phone_number);
+    await langContext.run(rejectLang, () => whatsappService.sendText(
         hospitalCreds(appt),
         appt.phone_number,
         bi(
             `We're sorry — your appointment request with Dr. ${dn} on ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) could not be approved${reason ? ` (${reason})` : ''}. Please reply 'menu' to book a different slot.`,
             `क्षमा करें — डॉ. ${dn} के साथ ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) की आपकी अपॉइंटमेंट मंज़ूर नहीं हो सकी${reason ? ` (${reason})` : ''}। दूसरा स्लॉट बुक करने के लिए 'menu' लिखें।`
         )
-    );
+    ));
     return { appointmentId: Number(appointmentId), status: 'Cancelled' };
 }
 
@@ -198,14 +203,15 @@ async function adminCancelAppointment(appointmentId, hospitalId, reason, adminId
     // response shape a caller would need to handle differently.
     if (transition.error) return null;
     const dn = cleanDoctorName(appt.doctor_name);
-    await whatsappService.sendText(
+    const cancelLang = await getPreferredLanguage(appt.phone_number);
+    await langContext.run(cancelLang, () => whatsappService.sendText(
         hospitalCreds(appt),
         appt.phone_number,
         bi(
             `Your appointment with Dr. ${dn} on ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) has been cancelled by the hospital${reason ? ` (${reason})` : ''}. Please reply 'menu' to book another slot.`,
             `डॉ. ${dn} के साथ ${formatDateDisplay(appt.appointment_date)} (${appt.shift}) की आपकी अपॉइंटमेंट अस्पताल द्वारा रद्द कर दी गई है${reason ? ` (${reason})` : ''}। दूसरा स्लॉट बुक करने के लिए 'menu' लिखें।`
         )
-    );
+    ));
     return { appointmentId: Number(appointmentId), status: 'Cancelled' };
 }
 

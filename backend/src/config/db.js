@@ -61,11 +61,12 @@ if (process.env.DATABASE_URL) {
     }
 
     // Every table in this schema uses `id` as its serial PK except
-    // user_sessions (keyed by phone_number, no id column at all) — see
+    // user_sessions (keyed by phone_number) and processed_webhook_messages
+    // (keyed by message_id) — neither has an id column at all. See
     // database/schema.sql. mysql2's `result.insertId` has no native pg equivalent
     // without an explicit RETURNING clause, so one is injected automatically
     // rather than touching every INSERT call site individually.
-    const NO_ID_TABLES = new Set(['user_sessions']);
+    const NO_ID_TABLES = new Set(['user_sessions', 'processed_webhook_messages']);
     function withReturningId(sql) {
         if (/\bRETURNING\b/i.test(sql)) return sql;
         const match = sql.match(/^\s*INSERT\s+INTO\s+`?(\w+)`?/i);

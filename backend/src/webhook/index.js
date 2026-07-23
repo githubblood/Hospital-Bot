@@ -4,6 +4,7 @@ const { resolveHospitalByPhoneNumberId } = require('./helpers/configLoader');
 const sessionManager = require('./helpers/sessionManager');
 const langContext = require('./helpers/langContext');
 const whatsappService = require('../services/whatsappService');
+const db = require('../config/db');
 const M = require('./messages');
 
 const mainMenu = require('./handlers/mainMenu');
@@ -39,20 +40,42 @@ const STATE_HANDLERS = {
 };
 
 // Meta retries webhook delivery if it doesn't get a fast-enough 200, which can
-// hand us the same message twice. Dedup by message id for a short window so a
-// retry can't double-book/double-cancel anything.
+// hand us the same message twice. Dedup by message id so a retry can't
+// double-book/double-cancel anything or send a duplicate reply.
+//
+// Two layers: an in-memory Map is checked first (handles the common case —
+// a retry arriving while this same process is still up — with zero DB
+// round-trip), then the persisted processed_webhook_messages table (see
+// schema.sql) as a backstop for the gap the Map can't cover: a process
+// restart (deploy, crash) wipes it, so a retry landing in a fresh process
+// would otherwise look brand-new and get processed a second time — the
+// literal "bot repeats messages" symptom. INSERT-as-check reuses the same
+// insert-then-catch-duplicate-key idiom bookingService.createAppointment
+// already uses for token allocation; db.js remaps Postgres' 23505 to
+// ER_DUP_ENTRY for exactly this kind of cross-dialect check.
 const PROCESSED_MESSAGE_TTL_MS = 10 * 60 * 1000;
 const processedMessageIds = new Map();
 
-function alreadyProcessed(messageId) {
+async function alreadyProcessed(messageId) {
     if (!messageId) return false;
+
     const now = Date.now();
     for (const [id, ts] of processedMessageIds) {
         if (now - ts > PROCESSED_MESSAGE_TTL_MS) processedMessageIds.delete(id);
     }
     if (processedMessageIds.has(messageId)) return true;
     processedMessageIds.set(messageId, now);
-    return false;
+
+    try {
+        await db.query('INSERT INTO processed_webhook_messages (message_id) VALUES (?)', [messageId]);
+        return false;
+    } catch (err) {
+        if (err.code === 'ER_DUP_ENTRY') return true;
+        // Fail open — a dedup-table hiccup should never block a real,
+        // never-before-seen message from being answered.
+        console.error('processed_webhook_messages dedup check failed:', err.message || err);
+        return false;
+    }
 }
 
 // A handler's work spans several awaited WhatsApp API calls before the
@@ -88,7 +111,7 @@ async function sendMainMenuOrAskLanguage(hospital, phone, session) {
 }
 
 async function handleIncomingMessage(userPhone, phoneNumberId, incoming, messageId) {
-    if (alreadyProcessed(messageId)) return;
+    if (await alreadyProcessed(messageId)) return;
     return runSerializedForPhone(userPhone, () => processMessage(userPhone, phoneNumberId, incoming));
 }
 

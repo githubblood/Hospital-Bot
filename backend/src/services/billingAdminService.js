@@ -1,6 +1,8 @@
 const db = require('../config/db');
 const whatsappService = require('./whatsappService');
 const { bi, cleanDoctorName, formatDate, formatDateDisplay } = require('../webhook/messages');
+const langContext = require('../webhook/helpers/langContext');
+const { getPreferredLanguage } = require('../webhook/helpers/sessionManager');
 
 // Safety cap (Stage 3.5 perf review), same reasoning as
 // appointmentAdminService's MAX_RESULTS — this query had no LIMIT at all.
@@ -156,16 +158,19 @@ async function sendBillWhatsApp(hospitalId, billId) {
 
     const dn = cleanDoctorName(bill.doctor_name);
     const date = formatDateDisplay(bill.bill_date);
-    const message = bi(
-        `🧾 Bill #${bill.id} — Dr. ${dn}\nDate: ${date}\n\nConsultation: ₹${bill.consultation_fee}\nMedicine: ₹${bill.medicine_charges}\nTests: ₹${bill.test_charges}\nOther: ₹${bill.other_charges}\nDiscount: -₹${bill.discount}\n\n*Total: ₹${bill.total_amount}*\nStatus: ${bill.payment_status}`,
-        `🧾 बिल #${bill.id} — डॉ. ${dn}\nतारीख: ${date}\n\nपरामर्श: ₹${bill.consultation_fee}\nदवाई: ₹${bill.medicine_charges}\nजांच: ₹${bill.test_charges}\nअन्य: ₹${bill.other_charges}\nछूट: -₹${bill.discount}\n\n*कुल: ₹${bill.total_amount}*\nस्थिति: ${bill.payment_status}`
-    );
+    const lang = await getPreferredLanguage(bill.phone_number);
+    await langContext.run(lang, async () => {
+        const message = bi(
+            `🧾 Bill #${bill.id} — Dr. ${dn}\nDate: ${date}\n\nConsultation: ₹${bill.consultation_fee}\nMedicine: ₹${bill.medicine_charges}\nTests: ₹${bill.test_charges}\nOther: ₹${bill.other_charges}\nDiscount: -₹${bill.discount}\n\n*Total: ₹${bill.total_amount}*\nStatus: ${bill.payment_status}`,
+            `🧾 बिल #${bill.id} — डॉ. ${dn}\nतारीख: ${date}\n\nपरामर्श: ₹${bill.consultation_fee}\nदवाई: ₹${bill.medicine_charges}\nजांच: ₹${bill.test_charges}\nअन्य: ₹${bill.other_charges}\nछूट: -₹${bill.discount}\n\n*कुल: ₹${bill.total_amount}*\nस्थिति: ${bill.payment_status}`
+        );
 
-    await whatsappService.sendText(
-        { whatsapp_business_phone_id: bill.whatsapp_business_phone_id, whatsapp_access_token: bill.whatsapp_access_token },
-        bill.phone_number,
-        message
-    );
+        await whatsappService.sendText(
+            { whatsapp_business_phone_id: bill.whatsapp_business_phone_id, whatsapp_access_token: bill.whatsapp_access_token },
+            bill.phone_number,
+            message
+        );
+    });
     return { success: true };
 }
 

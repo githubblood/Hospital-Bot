@@ -311,6 +311,22 @@ CREATE INDEX idx_user_sessions_hospital ON user_sessions(hospital_id);
 CREATE TRIGGER trg_user_sessions_last_interaction BEFORE UPDATE ON user_sessions
     FOR EACH ROW EXECUTE FUNCTION set_last_interaction();
 
+-- Persisted webhook-message dedup backstop (webhook/index.js's
+-- alreadyProcessed). The in-memory Map there handles the common case cheaply,
+-- but it's wiped on every process restart (deploy, crash) — if Meta retries
+-- delivery of a message across that gap, a fresh process has no memory of
+-- having already processed it and would reply/act on it a second time. This
+-- table survives restarts; a row is inserted (not merely checked) the first
+-- time a message id is seen, and the resulting duplicate-key error on a
+-- retry IS the "already processed" signal — same insert-then-catch idiom
+-- bookingService.createAppointment already uses for token allocation.
+-- Rows are pruned periodically (schedulerService) well past Meta's real
+-- retry window, so this never grows unbounded.
+CREATE TABLE processed_webhook_messages (
+    message_id VARCHAR(255) PRIMARY KEY,
+    processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE appointments (
     id SERIAL PRIMARY KEY,
     patient_id INT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
@@ -481,6 +497,14 @@ CREATE TABLE waiting_list (
     shift VARCHAR(20) NOT NULL CHECK (shift IN ('Morning', 'Afternoon', 'Evening')),
     status VARCHAR(20) NOT NULL DEFAULT 'Waiting' CHECK (status IN ('Waiting', 'Booked', 'Cancelled')),
     resulting_appointment_id INT NULL REFERENCES appointments(id) ON DELETE SET NULL,
+    -- Set only when this row was created by rescheduleService.waitlist() as
+    -- part of an emergency override closing a shift/hospital (NULL for the
+    -- unrelated operating-hours-change caller of the same function). Lets
+    -- scheduleController.liftOverride/waitlistService.notifyStillWaitingForOverride
+    -- notify exactly the patients THIS override stranded, not every
+    -- hospital-wide waiting patient (some of whom may be stuck on a
+    -- different, still-active override).
+    caused_by_override_id INT NULL REFERENCES schedule_overrides(id) ON DELETE SET NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     resolved_at TIMESTAMP NULL
 );
@@ -488,6 +512,7 @@ CREATE INDEX idx_waiting_list_patient ON waiting_list(patient_id);
 CREATE INDEX idx_waiting_list_original ON waiting_list(original_appointment_id);
 CREATE INDEX idx_waiting_list_resulting ON waiting_list(resulting_appointment_id);
 CREATE INDEX idx_doctor_status ON waiting_list(doctor_id, status);
+CREATE INDEX idx_waiting_list_override ON waiting_list(caused_by_override_id);
 
 -- Orphaned from an earlier, abandoned attempt at the same feature
 -- waiting_list now implements — kept only for schema parity with existing

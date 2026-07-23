@@ -60,6 +60,18 @@ async function setPreferredLanguage(phoneNumber, language) {
     await db.query('UPDATE user_sessions SET preferred_language = ? WHERE phone_number = ?', [language, phoneNumber]);
 }
 
+// For WhatsApp sends triggered outside an inbound-message request (reminders,
+// admin/reception actions, auto-reschedule) — these have no langContext scope
+// of their own, so callers look the patient's choice up explicitly and wrap
+// their bi()-built message in langContext.run(lang, ...). Returns null if the
+// phone has no session yet (never messaged the bot) or hasn't picked a
+// language — callers should fall back to bilingual ('both') in that case,
+// same as the pre-language-selection default everywhere else.
+async function getPreferredLanguage(phoneNumber) {
+    const [rows] = await db.query('SELECT preferred_language FROM user_sessions WHERE phone_number = ?', [phoneNumber]);
+    return rows[0]?.preferred_language || null;
+}
+
 async function incrementFailure(phoneNumber) {
     await db.query('UPDATE user_sessions SET failure_count = failure_count + 1 WHERE phone_number = ?', [phoneNumber]);
     const [rows] = await db.query('SELECT failure_count FROM user_sessions WHERE phone_number = ?', [phoneNumber]);
@@ -72,5 +84,6 @@ module.exports = {
     transitionState,
     resetToMainMenu,
     setPreferredLanguage,
+    getPreferredLanguage,
     incrementFailure
 };

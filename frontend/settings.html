@@ -39,6 +39,17 @@
     .settings-actions { display: flex; gap: 0.75rem; margin-top: 1.25rem; align-items: center; }
     .settings-actions .btn { width: auto; }
 
+    .override-scope-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .override-scope-card {
+        border: 1px solid var(--border); border-radius: 10px; padding: 1rem;
+        display: flex; flex-direction: column; gap: 0.6rem;
+    }
+    .override-scope-card .name { font-weight: 700; font-size: 0.92rem; color: var(--dark); }
+    .override-scope-card .meta { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
+    .override-scope-card .meta b { color: var(--text-primary); }
+    .override-scope-card .btn { width: auto; }
+    .override-scope-card.is-covered { opacity: 0.6; }
+
     .test-result { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem; display: none; }
     .test-result.ok { display: block; background: var(--success-tint-bg, rgba(0,180,120,0.1)); color: var(--success); }
     .test-result.fail { display: block; background: var(--danger-tint-bg); color: var(--danger); }
@@ -292,21 +303,8 @@
                 <div class="settings-panel" id="panel-emergency">
                     <div class="card">
                         <h2 style="margin:0 0 0.25rem; font-size:1rem;">Emergency Schedule Override</h2>
-                        <p class="settings-hint" style="margin-top:0.25rem;">Closing a shift or the whole hospital stops new WhatsApp bookings for it immediately, and automatically notifies/reschedules/waitlists anyone already booked in that window.</p>
-                        <div class="settings-actions" style="flex-wrap:wrap;">
-                            <button type="button" class="btn btn-outline" data-close-scope="Morning">Close Morning Shift</button>
-                            <button type="button" class="btn btn-outline" data-close-scope="Afternoon">Close Afternoon Shift</button>
-                            <button type="button" class="btn btn-outline" data-close-scope="Evening">Close Evening Shift</button>
-                            <button type="button" class="btn btn-danger" data-close-scope="Hospital">Close Entire Hospital</button>
-                        </div>
-                    </div>
-                    <div class="card" style="margin-top:1.25rem;">
-                        <h2 style="margin:0 0 1rem; font-size:1rem;">Active Overrides</h2>
-                        <table>
-                            <thead><tr><th>Scope</th><th>Reason</th><th>Note</th><th>Since</th><th>By</th><th>Action</th></tr></thead>
-                            <tbody id="overridesTableBody"></tbody>
-                        </table>
-                        <div class="empty-state" id="overridesEmptyState" style="display:none;">No active overrides.</div>
+                        <p class="settings-hint" style="margin-top:0.25rem;">Closing a shift or the whole hospital stops new WhatsApp bookings for it immediately, and automatically notifies/reschedules/waitlists anyone already booked in that window. Reopening resumes bookings immediately and notifies anyone still waiting for a slot.</p>
+                        <div class="override-scope-grid" id="overrideScopeGrid"></div>
                     </div>
                     <div class="card" style="margin-top:1.25rem;">
                         <h2 style="margin:0 0 1rem; font-size:1rem;">Waiting List</h2>

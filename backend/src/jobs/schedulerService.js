@@ -1,6 +1,8 @@
 const db = require('../config/db');
 const whatsappService = require('../services/whatsappService');
 const { bi, cleanDoctorName, formatTime } = require('../webhook/messages');
+const langContext = require('../webhook/helpers/langContext');
+const { getPreferredLanguage } = require('../webhook/helpers/sessionManager');
 
 const SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const REMINDER_WINDOW_MINUTES = 120;
@@ -41,18 +43,36 @@ async function sendDueReminders() {
             whatsapp_access_token: appt.whatsapp_access_token
         };
 
-        await whatsappService.sendText(
-            hospital,
-            appt.phone_number,
-            bi(
-                `⏰ Reminder: your appointment with Dr. ${dn} is coming up today at ${t}. Token #${appt.token_number}. Please try to arrive a little early.`,
-                `⏰ याद दिलाना: डॉ. ${dn} के साथ आपकी अपॉइंटमेंट आज ${t} बजे है। टोकन #${appt.token_number}। कृपया थोड़ा जल्दी पहुँचने की कोशिश करें।`
-            )
-        );
+        const lang = await getPreferredLanguage(appt.phone_number);
+        await langContext.run(lang, async () => {
+            await whatsappService.sendText(
+                hospital,
+                appt.phone_number,
+                bi(
+                    `⏰ Reminder: your appointment with Dr. ${dn} is coming up today at ${t}. Token #${appt.token_number}. Please try to arrive a little early.`,
+                    `⏰ याद दिलाना: डॉ. ${dn} के साथ आपकी अपॉइंटमेंट आज ${t} बजे है। टोकन #${appt.token_number}। कृपया थोड़ा जल्दी पहुँचने की कोशिश करें।`
+                )
+            );
+        });
         await db.query('UPDATE appointments SET reminder_sent = TRUE, reminder_sent_at = NOW() WHERE id = ?', [appt.id]);
     }
 
     return rows.length;
+}
+
+// Keeps processed_webhook_messages (webhook/index.js's cross-restart dedup
+// backstop) from growing unbounded. 24h is comfortably past any realistic
+// Meta webhook retry window — the in-memory Map already covers the first 10
+// minutes, this table only needs to outlive that by enough margin to catch a
+// retry that arrives after a restart.
+const DEDUP_RETENTION_HOURS = 24;
+
+async function cleanupProcessedMessages() {
+    const [result] = await db.query(
+        `DELETE FROM processed_webhook_messages WHERE processed_at < NOW() - (? * INTERVAL '1 hour')`,
+        [DEDUP_RETENTION_HOURS]
+    );
+    return result.affectedRows || 0;
 }
 
 // Idempotent — calling start() again while already running is a no-op, so
@@ -60,10 +80,12 @@ async function sendDueReminders() {
 function start() {
     if (intervalHandle) return;
 
-    sendDueReminders().catch(err => console.error('Reminder scan failed:', err.message || err));
-    intervalHandle = setInterval(() => {
+    const tick = () => {
         sendDueReminders().catch(err => console.error('Reminder scan failed:', err.message || err));
-    }, SCAN_INTERVAL_MS);
+        cleanupProcessedMessages().catch(err => console.error('processed_webhook_messages cleanup failed:', err.message || err));
+    };
+    tick();
+    intervalHandle = setInterval(tick, SCAN_INTERVAL_MS);
 }
 
 function stop() {
@@ -71,4 +93,4 @@ function stop() {
     intervalHandle = null;
 }
 
-module.exports = { start, stop, sendDueReminders };
+module.exports = { start, stop, sendDueReminders, cleanupProcessedMessages };

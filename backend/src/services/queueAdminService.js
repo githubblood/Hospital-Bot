@@ -5,6 +5,8 @@ const queueBroadcastService = require('./queueBroadcastService');
 const scheduleService = require('./scheduleService');
 const appointmentStateMachine = require('./appointmentStateMachine');
 const { bi, formatTime } = require('../webhook/messages');
+const langContext = require('../webhook/helpers/langContext');
+const { getPreferredLanguage } = require('../webhook/helpers/sessionManager');
 
 // Ownership check reused everywhere below: a hospital's staff can only poll/
 // advance the queue for their own doctors. Uses CURDATE() in SQL throughout
@@ -127,14 +129,17 @@ async function markCurrentDone(hospitalId, appointmentId, adminId) {
     let notified = null;
     const next = nextRows[0];
     if (next) {
-        await whatsappService.sendText(
-            { whatsapp_business_phone_id: next.whatsapp_business_phone_id, whatsapp_access_token: next.whatsapp_access_token },
-            next.phone_number,
-            bi(
-                `🔔 It's almost your turn! Token #${next.token_number} with Dr. ${next.doctor_name} — please head to the clinic now.`,
-                `🔔 आपकी बारी आने वाली है! टोकन #${next.token_number}, डॉ. ${next.doctor_name} — कृपया अभी क्लिनिक आएँ।`
-            )
-        );
+        const lang = await getPreferredLanguage(next.phone_number);
+        await langContext.run(lang, async () => {
+            await whatsappService.sendText(
+                { whatsapp_business_phone_id: next.whatsapp_business_phone_id, whatsapp_access_token: next.whatsapp_access_token },
+                next.phone_number,
+                bi(
+                    `🔔 It's almost your turn! Token #${next.token_number} with Dr. ${next.doctor_name} — please head to the clinic now.`,
+                    `🔔 आपकी बारी आने वाली है! टोकन #${next.token_number}, डॉ. ${next.doctor_name} — कृपया अभी क्लिनिक आएँ।`
+                )
+            );
+        });
         notified = { appointmentId: next.id, tokenNumber: next.token_number };
     }
 

@@ -63,7 +63,7 @@ exports.createOverride = async (req, res) => {
     // per-doctor `FOR UPDATE` lock already serializes any two that land on
     // the same doctor, exactly as it does for ordinary concurrent bookings.
     const results = await Promise.all(
-        affected.map(appt => rescheduleService.autoRescheduleAppointment(appt, req.admin.hospital_id, `an emergency override (${reason})`, req.admin.id))
+        affected.map(appt => rescheduleService.autoRescheduleAppointment(appt, req.admin.hospital_id, `an emergency override (${reason})`, req.admin.id, override.id))
     );
 
     await scheduleAuditService.record({
@@ -88,6 +88,10 @@ exports.liftOverride = async (req, res) => {
     });
 
     const waitlistCleared = await waitlistService.retryWaitingList(req.admin.hospital_id);
+    // Only the patients THIS override stranded and who are still waiting
+    // after the retry above just got them rebooked where possible — not a
+    // broadcast to every patient (see waitlistService.notifyStillWaitingForOverride).
+    await waitlistService.notifyStillWaitingForOverride(req.admin.hospital_id, result.override.id);
     res.json({ lifted: true, waitlistCleared });
 };
 
