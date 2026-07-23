@@ -359,7 +359,29 @@
       "Bash(node test_dashboard_cards_temp.js)",
       "Bash(cp \"C:\\\\Users\\\\vivek\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-vivek-Desktop-Hospital-chatbot\\\\e87ae7d5-cbe0-4cb7-9565-49da9d202101\\\\scratchpad\\\\test_dashboard_visual.js\" ./test_dashboard_visual_temp.js)",
       "Bash(node test_dashboard_visual_temp.js)",
-      "Bash(rm -f test_dashboard_visual_temp.js)"
+      "Bash(rm -f test_dashboard_visual_temp.js)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\({main:p.main, scripts:p.scripts}\\)\\)\")",
+      "Bash(node \"C:\\\\Users\\\\vivek\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-vivek-Desktop-Hospital-chatbot\\\\e87ae7d5-cbe0-4cb7-9565-49da9d202101\\\\scratchpad\\\\add_config_script.js\")",
+      "Bash(taskkill //PID 11476 //F)",
+      "Bash(ALLOWED_ORIGIN=http://localhost:5500 node src/server.js)",
+      "Bash(curl -sD - -o /dev/null -X OPTIONS http://localhost:3000/api/admin/appointments -H \"Origin: http://localhost:5500\" -H \"Access-Control-Request-Method: GET\")",
+      "Bash(curl -sD - -o /dev/null -X OPTIONS http://localhost:3000/api/admin/appointments -H \"Origin: http://evil.example.com\" -H \"Access-Control-Request-Method: GET\")",
+      "Bash(curl -sD - -o /dev/null http://localhost:3000/api/admin/appointments)",
+      "Bash(taskkill //PID 19732 //F)",
+      "Bash(curl -sD - -o /dev/null http://localhost:3000/api/admin/appointments -H \"Origin: http://localhost:5500\")",
+      "Bash(node \"C:\\\\Users\\\\vivek\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-vivek-Desktop-Hospital-chatbot\\\\e87ae7d5-cbe0-4cb7-9565-49da9d202101\\\\scratchpad\\\\static_server.js\" \"/c/tmp/vercel_test_public\" 5500)",
+      "Bash(curl -sf http://localhost:5500/index.html -o /dev/null)",
+      "Bash(npm ls *)",
+      "Bash(node \"C:\\\\Users\\\\vivek\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-vivek-Desktop-Hospital-chatbot\\\\e87ae7d5-cbe0-4cb7-9565-49da9d202101\\\\scratchpad\\\\cors_test.js\")",
+      "Bash(cp \"C:\\\\Users\\\\vivek\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-vivek-Desktop-Hospital-chatbot\\\\e87ae7d5-cbe0-4cb7-9565-49da9d202101\\\\scratchpad\\\\cors_test.js\" \"/c/Users/vivek/Desktop/Hospital chatbot/cors_test_temp.js\")",
+      "Bash(node cors_test_temp.js)",
+      "Bash(rm -f cors_test_temp.js)",
+      "Bash(taskkill //PID 16328 //F)",
+      "Bash(taskkill //PID 3796 //F)",
+      "Bash(curl -s http://localhost:3000/admin/dashboard.html -o /dev/null -w \"same-origin admin panel status: %{http_code}\\\\n\")",
+      "Bash(node backend/src/server.js)",
+      "Bash(curl -s -X POST http://localhost:3000/api/admin/login -H \"Content-Type: application/json\" -d '{\"email\":\"nonexistent@test.com\",\"password\":\"wrong\"}' -w \"\\\\nHTTP %{http_code}\\\\n\")",
+      "Bash(taskkill //PID 16404 //F)"
     ]
   }
 }
