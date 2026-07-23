@@ -14,7 +14,7 @@ with a Meta-shaped payload, and the effect is observed in the `user_sessions`,
 
 ```bash
 cd "/c/Users/vivek/Desktop/Hospital chatbot"
-node src/server.js &> /tmp/hospital-chatbot.log &
+node backend/src/server.js &> /tmp/hospital-chatbot.log &
 for i in $(seq 1 20); do curl -sf http://localhost:3000/health > /dev/null && break; sleep 0.5; done
 curl -s http://localhost:3000/health   # -> {"status":"ok"}
 ```
@@ -72,7 +72,7 @@ row: token_number 1, expected_time 09:00:00, status Confirmed.
 ## Known gotchas
 
 - **WhatsApp send failures are caught and logged, never thrown** (see
-  `src/services/whatsappService.js`). A bad/expired token or an
+  `backend/src/services/whatsappService.js`). A bad/expired token or an
   unauthorized recipient number shows up as `console.error('WhatsApp send
   failed: ...')` in the server log, not as a crash or an HTTP error to the
   simulated webhook caller. Check the log, not the curl exit code.
@@ -101,7 +101,7 @@ row: token_number 1, expected_time 09:00:00, status Confirmed.
 ## Probes worth re-running after a change
 
 - 3x invalid input in any list-driven state → escalates to main menu and
-  resets `failure_count` (threshold is 3, see `src/rule_engine/helpers/invalidInput.js`).
+  resets `failure_count` (threshold is 3, see `backend/src/webhook/helpers/invalidInput.js`).
 - Selecting General Medicine (dept id 3, zero doctors) → must send a
   fresh main menu (via `mainMenu.sendMainMenu`), not just a bare
   `sessionManager.resetToMainMenu` (silent DB-only reset with no visible
@@ -109,5 +109,5 @@ row: token_number 1, expected_time 09:00:00, status Confirmed.
 - `emergency`/`sos` mid-flow → sends the emergency message, does **not**
   change session state. `menu`/`0` → resets and re-sends the main menu.
 - Same message `id` POSTed twice → second delivery must be a no-op
-  (in-memory dedup in `src/rule_engine/index.js`, 10-minute TTL).
+  (in-memory dedup in `backend/src/webhook/index.js`, 10-minute TTL).
 - "My Appointments" → cancel → appointment `status` flips to `Cancelled`.

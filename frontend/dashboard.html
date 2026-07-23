@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>(function(){try{document.documentElement.setAttribute('data-theme', localStorage.getItem('theme') || 'light');if(localStorage.getItem('sidebarCollapsed')==='true')document.documentElement.classList.add('sidebar-collapsed');}catch(e){}})();</script>
+<title>Dashboard — Hospital Chatbot Admin</title>
+<link rel="icon" type="image/svg+xml" href="images/favicon.svg">
+<link rel="stylesheet" href="css/style.css">
+<style>
+    .queue-controls { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .queue-controls select {
+        padding: 0.5rem 0.65rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem;
+        background: var(--card-bg); color: var(--text-primary);
+    }
+    /* .btn-primary defaults to width:100% (fine stacked in a form); explicit
+       auto here keeps it sized to its label in this desktop 3-in-a-row
+       layout — the mobile media query below re-widens it once the row
+       becomes a column. */
+    .queue-controls .btn { width: auto; }
+    .queue-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+    .queue-stat-card {
+        background: var(--card-bg); border-radius: 10px; padding: 1rem; text-align: center;
+        box-shadow: var(--shadow); transition: var(--transition);
+    }
+    .queue-stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
+    .queue-stat-card .label { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.3rem; }
+    .queue-stat-card .value { font-size: 1.6rem; font-weight: 700; }
+    .queue-stat-card .sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem; }
+    .queue-stat-card.current { border-top: 3px solid var(--danger); }
+    .queue-stat-card.current .value { color: var(--danger); }
+    .queue-stat-card.seen { border-top: 3px solid var(--success); }
+    .queue-stat-card.seen .value { color: var(--success); }
+    .queue-stat-card.remaining { border-top: 3px solid var(--warning); }
+    .queue-stat-card.remaining .value { color: var(--warning-tint-text); }
+    .queue-stat-card.next { border-top: 3px solid var(--primary); }
+    .queue-stat-card.next .value { color: var(--primary-dark); }
+    .queue-actions-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
+    .queue-actions-row .btn { width: auto; }
+    .queue-row-current td { background: var(--danger-tint-bg); }
+    .badge-completed-queue { background: var(--text-muted); }
+    .badge-current-queue { background: var(--danger); }
+    .queue-live-badge {
+        display: none; align-items: center; gap: 0.35rem;
+        font-size: 0.78rem; font-weight: 700; color: var(--success);
+    }
+    .queue-live-badge .dot {
+        width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+        animation: queueLiveBlink 1.2s infinite;
+    }
+    @keyframes queueLiveBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+    .overview-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    @media (max-width: 1100px) { .overview-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .overview-grid { grid-template-columns: 1fr; } }
+    .overview-card {
+        background: var(--card-bg); border-radius: 10px; padding: 1rem;
+        box-shadow: var(--shadow); transition: var(--transition); border-top: 3px solid var(--border);
+        display: flex; flex-direction: column; justify-content: space-between; min-height: 80px;
+        cursor: pointer;
+    }
+    .overview-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
+    .overview-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .overview-card .label { font-size: 0.76rem; color: var(--text-muted); margin-bottom: 0.3rem; }
+    .overview-card .value { font-size: 1.5rem; font-weight: 700; color: var(--dark); }
+    .overview-card.c-total { border-top-color: var(--primary); }
+    .overview-card.c-confirmed { border-top-color: var(--success); }
+    .overview-card.c-cancelled { border-top-color: var(--danger); }
+    .overview-card.c-completed { border-top-color: var(--text-muted); }
+    .overview-card.c-waiting { border-top-color: var(--warning); }
+    .overview-card.c-available { border-top-color: var(--primary-dark); }
+    .overview-card.c-leave { border-top-color: var(--danger); }
+    .overview-card.c-patients { border-top-color: var(--primary); }
+
+    .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+    .chart-card h3 { margin: 0 0 0.75rem; font-size: 0.92rem; color: var(--dark); }
+    .chart-svg { width: 100%; height: auto; display: block; }
+    .chart-empty { padding: 2.5rem 0; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+
+    @media (max-width: 700px) {
+        .queue-stat-grid { grid-template-columns: repeat(2, 1fr); }
+        .charts-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 420px) {
+        .queue-stat-grid { grid-template-columns: 1fr; }
+        .queue-controls select, .queue-controls .btn { flex: 1 1 100%; }
+        .markDoneBtn, #markDoneBtn { width: 100%; }
+    }
+
+    /* Present only on mobile (see the display:none default just below) — an
+       icon that's purely decorative doesn't belong in the desktop layout the
+       reference design already established, but earns its place once each
+       card is the width of the whole screen and reads more like a native
+       app tile than a dense desktop stat row. */
+    .overview-icon { display: none; }
+
+    @media (max-width: 480px) {
+        .overview-grid { gap: 1.1rem; margin-bottom: 1.75rem; }
+        .overview-card {
+            min-height: 120px; padding: 1.25rem 1.35rem; gap: 0.4rem;
+        }
+        .overview-icon { display: block; font-size: 1.6rem; line-height: 1; }
+        .overview-card .label { font-size: 0.95rem; }
+        .overview-card .value { font-size: 2.1rem; } /* ~34px, within the 28-36px target */
+
+        /* Live Queue: every control on its own row, the action button
+           full-width — the three-in-a-row layout works at tablet width but
+           reads cramped once each dropdown is the width of a phone screen. */
+        .queue-controls { flex-direction: column; align-items: stretch; }
+        .queue-controls select, .queue-controls .btn { width: 100%; flex: 1 1 auto; min-height: 44px; }
+
+        .charts-grid { gap: 1.5rem; }
+        .chart-card h3 { font-size: 1rem; }
+    }
+</style>
+</head>
+<body>
+    <div class="app-shell">
+        <div class="global-topbar">
+            <button class="hamburger-btn" id="hamburgerBtn" type="button" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+            <div class="brand">
+                <div class="brand-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+                <span class="brand-name">Hospital Bot</span>
+            </div>
+            <div class="global-search" id="globalSearchWrap">
+                <span class="search-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+                <input type="text" id="globalSearchInput" placeholder="Search patients, doctors...">
+                <div class="dropdown-panel" id="globalSearchPanel" style="width:100%;"></div>
+            </div>
+            <div class="topbar-spacer"></div>
+            <div class="date-chip">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                <span id="topbarDateLabel">Today</span>
+                <input type="date" id="topbarDateInput" title="Pick a date">
+            </div>
+            <button class="btn-report" id="generateReportBtn" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 12h6M9 16h6M9 8h1"/></svg>
+                Generate Report
+            </button>
+            <div class="topbar-actions">
+                <button class="icon-btn" id="themeToggleBtn" data-theme-toggle type="button" title="Toggle dark mode" aria-label="Toggle dark mode">
+                    <span data-theme-icon>🌙</span>
+                </button>
+                <div id="activityWrap">
+                    <button class="icon-btn" id="activityBtn" title="Recent activity" type="button" aria-label="Recent activity">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        <span class="dot" id="activityDot"></span>
+                    </button>
+                    <div class="dropdown-panel" id="activityPanel">
+                        <div class="dropdown-header">Recent Activity</div>
+                        <div class="dropdown-body"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="shell-body">
+            <div class="sidebar-overlay" id="sidebarOverlay"></div>
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <button type="button" class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-expanded="true" aria-label="Collapse sidebar" title="Collapse sidebar">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>
+                    </button>
+                </div>
+                <nav>
+                    <div class="nav-section">
+                        <button type="button" class="nav-section-header" data-section="main" aria-expanded="true">
+                            <span>Main</span>
+                            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+                        <div class="nav-section-body" data-section-body="main">
+                            <a href="dashboard.html" class="active"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nav-label">Dashboard</span></a>
+                            <a href="reception.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nav-label">Reception</span></a>
+                            <a href="appointments.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nav-label">Appointments</span></a>
+                            <a href="queue-management.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="nav-label">Queue Management</span></a>
+                            <a href="reception-screen.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="nav-label">Reception Display</span></a>
+                            <a href="billing.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg><span class="nav-label">Billing</span></a>
+                            <a href="reports.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg><span class="nav-label">Reports</span></a>
+                        </div>
+                    </div>
+                    <div class="nav-section">
+                        <button type="button" class="nav-section-header" data-section="management" aria-expanded="true">
+                            <span>Management</span>
+                            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+                        <div class="nav-section-body" data-section-body="management">
+                            <a href="branches.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M14 9h1M14 13h1"/></svg><span class="nav-label">Branches</span></a>
+                            <a href="departments.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="nav-label">Departments</span></a>
+                            <a href="doctors.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg><span class="nav-label">Doctors</span></a>
+                            <a href="patients.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20v-1a6.5 6.5 0 0 1 13 0v1"/><circle cx="17" cy="9" r="3"/><path d="M14.5 20v-1a5 5 0 0 1 8 0v1"/></svg><span class="nav-label">Patients</span></a>
+                        </div>
+                    </div>
+                    <div class="nav-section">
+                        <button type="button" class="nav-section-header" data-section="system" aria-expanded="true">
+                            <span>System</span>
+                            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+                        <div class="nav-section-body" data-section-body="system">
+                            <a href="staff.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="nav-label">Staff</span></a>
+                            <a href="settings.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="nav-label">Settings</span></a>
+                            <a href="subscription.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg><span class="nav-label">Subscription</span></a>
+                        </div>
+                    </div>
+                </nav>
+                <div class="sidebar-user" id="sidebarUser"></div>
+                <button type="button" class="sidebar-logout-btn" id="sidebarLogoutBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+                    <span class="nav-label">Logout</span>
+                </button>
+            </aside>
+            <main class="main-content">
+                <div class="topbar">
+                    <h1>Dashboard</h1>
+                </div>
+
+                <div class="overview-grid">
+                    <div class="overview-card c-total" role="button" tabindex="0" data-nav="appointments.html?date={today}" aria-label="Today's Total Appointments — view all">
+                        <div class="overview-icon">📅</div>
+                        <div class="label">Today's Total Appointments</div>
+                        <div class="value" id="ovTotal">—</div>
+                    </div>
+                    <div class="overview-card c-confirmed" role="button" tabindex="0" data-nav="appointments.html?date={today}&status=Confirmed" aria-label="Confirmed appointments — view filtered">
+                        <div class="overview-icon">✅</div>
+                        <div class="label">Confirmed</div>
+                        <div class="value" id="ovConfirmed">—</div>
+                    </div>
+                    <div class="overview-card c-cancelled" role="button" tabindex="0" data-nav="appointments.html?date={today}&status=Cancelled" aria-label="Cancelled appointments — view filtered">
+                        <div class="overview-icon">❌</div>
+                        <div class="label">Cancelled</div>
+                        <div class="value" id="ovCancelled">—</div>
+                    </div>
+                    <div class="overview-card c-completed" role="button" tabindex="0" data-nav="appointments.html?date={today}&status=Completed" aria-label="Completed appointments — view filtered">
+                        <div class="overview-icon">🏁</div>
+                        <div class="label">Completed</div>
+                        <div class="value" id="ovCompleted">—</div>
+                    </div>
+                    <div class="overview-card c-waiting" role="button" tabindex="0" data-nav="queue-management.html" aria-label="Waiting patients — view live queue">
+                        <div class="overview-icon">⏳</div>
+                        <div class="label">Waiting Patients</div>
+                        <div class="value" id="ovWaiting">—</div>
+                    </div>
+                    <div class="overview-card c-available" role="button" tabindex="0" data-nav="doctors.html?leave=0" aria-label="Available doctors today — view filtered">
+                        <div class="overview-icon">🩺</div>
+                        <div class="label">Available Doctors Today</div>
+                        <div class="value" id="ovAvailable">—</div>
+                    </div>
+                    <div class="overview-card c-leave" role="button" tabindex="0" data-nav="doctors.html?leave=1" aria-label="Doctors on leave — view filtered">
+                        <div class="overview-icon">🛌</div>
+                        <div class="label">Doctors On Leave</div>
+                        <div class="value" id="ovOnLeave">—</div>
+                    </div>
+                    <div class="overview-card c-patients" role="button" tabindex="0" data-nav="patients.html" aria-label="Total patients — view all">
+                        <div class="overview-icon">👥</div>
+                        <div class="label">Total Patients</div>
+                        <div class="value" id="ovPatients">—</div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <h2>🏥 Live Queue</h2>
+
+                    <div class="queue-controls">
+                        <select id="queueDoctorSelect">
+                            <option value="">Select doctor…</option>
+                        </select>
+                        <select id="queueShiftSelect">
+                            <option value="Morning">Morning</option>
+                            <option value="Afternoon">Afternoon</option>
+                            <option value="Evening">Evening</option>
+                        </select>
+                        <button class="btn btn-primary" id="loadQueueBtn" type="button">Load Queue</button>
+                    </div>
+
+                    <div id="queueContent" style="display:none;">
+                        <div class="queue-stat-grid">
+                            <div class="queue-stat-card current">
+                                <div class="label">🔴 Current Token</div>
+                                <div class="value" id="qCurrentToken">—</div>
+                                <div class="sub" id="qCurrentName">—</div>
+                            </div>
+                            <div class="queue-stat-card seen">
+                                <div class="label">✅ Seen</div>
+                                <div class="value" id="qSeenCount">0</div>
+                            </div>
+                            <div class="queue-stat-card remaining">
+                                <div class="label">⏳ Remaining</div>
+                                <div class="value" id="qRemainingCount">0</div>
+                            </div>
+                            <div class="queue-stat-card next">
+                                <div class="label">👤 Next Token</div>
+                                <div class="value" id="qNextToken">—</div>
+                                <div class="sub" id="qNextName">—</div>
+                            </div>
+                            <div class="queue-stat-card">
+                                <div class="label">⏱️ Avg Wait / Patient</div>
+                                <div class="value" id="qAvgWait">—</div>
+                            </div>
+                            <div class="queue-stat-card">
+                                <div class="label">🏁 Est. Queue Finish</div>
+                                <div class="value" id="qEstFinish">—</div>
+                            </div>
+                        </div>
+
+                        <div class="queue-actions-row">
+                            <button class="btn btn-primary" id="markDoneBtn" type="button">✅ Patient Done — Call Next</button>
+                            <span class="queue-live-badge" id="queueLiveBadge"><span class="dot"></span>LIVE</span>
+                            <span class="sub" id="qLastUpdated" style="color:var(--text-muted); font-size:0.82rem;"></span>
+                        </div>
+
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Token</th>
+                                    <th>Patient</th>
+                                    <th>Phone</th>
+                                    <th>Age/Gender</th>
+                                    <th>Expected Time</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queueTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="empty-state" id="queueEmptyState">Select a doctor and shift, then Load Queue.</div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="card chart-card">
+                        <h3>Appointments Per Day (last 14 days)</h3>
+                        <div id="chartPerDay"></div>
+                    </div>
+                    <div class="card chart-card">
+                        <h3>Appointments By Department</h3>
+                        <div id="chartByDept"></div>
+                    </div>
+                    <div class="card chart-card">
+                        <h3>Doctor Workload (top 10)</h3>
+                        <div id="chartWorkload"></div>
+                    </div>
+                    <div class="card chart-card">
+                        <h3>Cancellation Rate (last 14 days)</h3>
+                        <div id="chartCancellation"></div>
+                    </div>
+                    <div class="card chart-card">
+                        <h3>Peak Booking Hours</h3>
+                        <div id="chartPeakHours"></div>
+                    </div>
+                    <div class="card chart-card">
+                        <h3>Today's Queue Load By Shift</h3>
+                        <div id="chartQueueShift"></div>
+                    </div>
+                    <div class="card chart-card">
+                        <h3>Monthly Growth</h3>
+                        <div id="chartMonthly"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Recent Appointments</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Patient</th>
+                                <th>Doctor</th>
+                                <th>Date</th>
+                                <th>Shift</th>
+                                <th>Token</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentTableBody"></tbody>
+                    </table>
+                    <div class="empty-state" id="emptyState" style="display:none;">No recent appointments.</div>
+                </div>
+            </main>
+        </div>
+    </div>
+    <div class="modal-overlay" id="logoutModal">
+        <div class="modal-box">
+            <h3>🚪 Logout Confirm</h3>
+            <p>Kya aap sure hain logout karna chahte hain?</p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-outline" id="logoutCancelBtn">Cancel</button>
+                <button type="button" class="btn btn-danger" id="logoutConfirmBtn">Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/escapeHtml.js"></script>
+    <script src="js/theme.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/avatar.js"></script>
+    <script src="js/topbar.js"></script>
+    <script src="js/toast.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

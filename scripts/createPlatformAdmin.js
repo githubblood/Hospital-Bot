@@ -1,12 +1,12 @@
 // One-time bootstrap for the very first platform_admins row — there is no
 // public self-registration route for this table by design (see
-// db/schema.sql's comment on platform_admins). Run manually, once, from the
+// database/schema.sql's comment on platform_admins). Run manually, once, from the
 // project root:
 //   node scripts/createPlatformAdmin.js <email> <password> <name>
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const db = require('../src/config/db');
-const { isValidEmail } = require('../src/utils/validators');
+const db = require('../backend/src/config/db');
+const { isValidEmail } = require('../backend/src/validators/validators');
 
 async function main() {
     const [email, password, ...nameParts] = process.argv.slice(2);
