@@ -14,4 +14,4 @@
 // Vercel — the browser needs an absolute URL to reach a different domain,
 // and the Railway backend needs a matching ALLOWED_ORIGIN env var (see
 // .env.example) so its CORS policy accepts requests from that origin.
-const API_BASE_URL = '';
+const API_BASE_URL = 'https://hospital-bot-production.up.railway.app';
